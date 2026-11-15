@@ -2317,6 +2317,125 @@ it.effect("SQL snapshot windows keep cards for requests still pending", () =>
   }).pipe(Effect.provide(layerTest)),
 );
 
+it.effect("SQL snapshot windows keep the run a usage-limit continuation continues", () =>
+  Effect.gen(function* () {
+    const store = yield* ProjectionStore.ProjectionStoreV2;
+    const now = yield* DateTime.now;
+    const threadId = ThreadId.make("thread:continuation-window");
+    yield* store.apply({
+      id: EventId.make("event:continuation-window:thread"),
+      type: "thread.created",
+      threadId,
+      occurredAt: now,
+      payload: {
+        createdBy: "user",
+        creationSource: "web",
+        id: threadId,
+        projectId: ProjectId.make("project:continuation-window"),
+        title: "Continuation window",
+        providerInstanceId,
+        modelSelection,
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        branch: null,
+        worktreePath: null,
+        activeProviderThreadId: null,
+        lineage: { parentThreadId: null, relationshipToParent: null, rootThreadId: threadId },
+        forkedFrom: null,
+        createdAt: now,
+        updatedAt: now,
+        archivedAt: null,
+        settledOverride: null,
+        settledAt: null,
+        lastVisitedAt: null,
+        deletedAt: null,
+      },
+    });
+    let ordinal = 0;
+    // The limited run, then a routed continuation long enough to push it out of the window.
+    for (const [turn, itemCount] of [
+      [1, 1],
+      [2, 6],
+    ] as const) {
+      const runId = RunId.make(`run:continuation-window:${turn}`);
+      const nodeId = NodeId.make(`node:continuation-window:${turn}`);
+      yield* store.apply({
+        id: EventId.make(`event:continuation-window:run:${turn}`),
+        type: "run.created",
+        threadId,
+        runId,
+        nodeId,
+        driver,
+        occurredAt: now,
+        payload: {
+          id: runId,
+          threadId,
+          ordinal: turn,
+          providerInstanceId,
+          modelSelection,
+          providerThreadId: null,
+          userMessageId: MessageId.make(`message:continuation-window:${turn}`),
+          rootNodeId: nodeId,
+          activeAttemptId: null,
+          status: turn === 1 ? "failed" : "completed",
+          requestedAt: now,
+          startedAt: now,
+          completedAt: now,
+          checkpointId: null,
+          contextHandoffId: null,
+          ...(turn === 2
+            ? { usageLimitContinuationOfRunId: RunId.make("run:continuation-window:1") }
+            : {}),
+        },
+      });
+      for (let index = 0; index < itemCount; index += 1) {
+        const id = TurnItemId.make(`item:continuation-window:${turn}:${index}`);
+        yield* store.apply({
+          id: EventId.make(`event:continuation-window:${id}`),
+          type: "turn-item.updated",
+          threadId,
+          runId,
+          nodeId,
+          driver,
+          occurredAt: now,
+          payload: {
+            id,
+            threadId,
+            runId,
+            nodeId,
+            providerThreadId: null,
+            providerTurnId: null,
+            nativeItemRef: null,
+            parentItemId: null,
+            ordinal: ++ordinal,
+            status: "completed",
+            title: null,
+            startedAt: now,
+            completedAt: now,
+            updatedAt: now,
+            type: "user_message",
+            createdBy: "user",
+            creationSource: "web",
+            messageId: MessageId.make(`message:continuation-window:${turn}:${index}`),
+            inputIntent: "turn_start",
+            text: `Turn ${turn} item ${index}`,
+            attachments: [],
+          },
+        });
+      }
+    }
+    const snapshot = yield* store.getThreadSnapshotWindow(threadId, { rowLimit: 3 });
+    assert.notInclude(
+      snapshot.projection.turnItems.map((item) => item.runId),
+      RunId.make("run:continuation-window:1"),
+    );
+    assert.deepEqual(
+      snapshot.projection.runs.map((run) => run.id),
+      [RunId.make("run:continuation-window:1"), RunId.make("run:continuation-window:2")],
+    );
+  }).pipe(Effect.provide(layerTest)),
+);
+
 it.effect("lists only active subagent IDs without loading shell data", () =>
   Effect.gen(function* () {
     const store = yield* ProjectionStore.ProjectionStoreV2;

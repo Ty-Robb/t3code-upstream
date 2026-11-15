@@ -451,6 +451,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["usage quota rate limit reset recover continue"],
   },
   {
+    id: "usage-aware-routing",
+    title: "Usage-aware routing",
+    to: "/settings/threads",
+    searchTerms: ["usage quota limit account subscription switch fallback starred favorite"],
+  },
+  {
     id: "working-shelf",
     title: "Working section",
     to: "/settings/general",

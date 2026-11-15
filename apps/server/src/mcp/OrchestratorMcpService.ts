@@ -100,6 +100,7 @@ import type {
   ProjectionRecordFilter,
 } from "../orchestration-v2/ProjectionStore.ts";
 import { runOutcome } from "../orchestration-v2/RestartBackgroundNote.ts";
+import * as UsageRouting from "../usage/UsageRouting.ts";
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
 import * as ThreadLaunchService from "../orchestration-v2/ThreadLaunchService.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
@@ -1016,6 +1017,7 @@ function timelineItem(input: {
 const make = Effect.gen(function* () {
   const random = yield* SecureRandom.SecureRandom;
   const threadManagement = yield* ThreadManagementService.ThreadManagementService;
+  const usageRouting = yield* UsageRouting.UsageRouting;
   const providerRegistry = yield* ProviderRegistry.ProviderRegistry;
   const providerAdapters = yield* ProviderAdapterRegistry.ProviderAdapterRegistryV2;
   const scheduledTasks = yield* ScheduledTaskService.ScheduledTaskService;
@@ -1336,9 +1338,45 @@ const make = Effect.gen(function* () {
     /** Receipt replays bypass current settings because they start no work. Dispatch must reuse the checked command ID. */
     readonly skipProjectEnablementFilter?: boolean;
   }): Effect.fn.Return<ResolvedTarget, OrchestratorMcpFailure> {
-    const requestedInstanceId = input.target?.providerInstanceId;
-    const requestedDriver = input.target?.driverKind;
     const orchestrationCapableInstanceIds = yield* loadOrchestrationCapableInstanceIds();
+    // A task that names no provider or model would inherit the parent's; usage-aware routing may
+    // start it on an account with verified capacity instead. Replays keep their first target.
+    // Options the agent passed are meant for the inherited model, so they keep it.
+    const routed =
+      input.target?.providerInstanceId === undefined &&
+      input.target?.driverKind === undefined &&
+      input.target?.model === undefined &&
+      input.target?.options === undefined &&
+      input.skipProjectEnablementFilter !== true
+        ? yield* usageRouting.chooseForLaunch({
+            projectId: input.parent.thread.projectId,
+            base: input.parent.thread.modelSelection,
+            // A child inherits the parent's mode, so only accounts that offer it qualify.
+            allowedInstanceIds: new Set(
+              input.providers
+                .filter(
+                  (provider) =>
+                    orchestrationCapableInstanceIds.has(provider.instanceId) &&
+                    (provider.supportedRuntimeModes === undefined ||
+                      provider.supportedRuntimeModes.includes(input.parent.thread.runtimeMode)),
+                )
+                .map((provider) => provider.instanceId),
+            ),
+          })
+        : null;
+    const target =
+      routed !== null
+        ? {
+            ...input.target,
+            providerInstanceId: routed.selection.instanceId,
+            model: routed.selection.model,
+            ...(routed.selection.options === undefined
+              ? {}
+              : { options: routed.selection.options }),
+          }
+        : input.target;
+    const requestedInstanceId = target?.providerInstanceId;
+    const requestedDriver = target?.driverKind;
     let instanceId = requestedInstanceId;
 
     if (instanceId === undefined && requestedDriver !== undefined) {
@@ -1411,7 +1449,7 @@ const make = Effect.gen(function* () {
     }
 
     const inheritedSelection = input.parent.thread.modelSelection;
-    const requestedModel = input.target?.model;
+    const requestedModel = target?.model;
     const model =
       requestedModel ??
       (instanceId === inheritedSelection.instanceId
@@ -1436,7 +1474,7 @@ const make = Effect.gen(function* () {
 
     const descriptors = provider.models.find((candidate) => candidate.slug === model)?.capabilities
       ?.optionDescriptors;
-    const requestedOptions = withLegacyUltracodeEffort(descriptors, input.target?.options);
+    const requestedOptions = withLegacyUltracodeEffort(descriptors, target?.options);
     if (requestedOptions !== undefined) {
       const invalid = invalidOptionSelections(requestedOptions, descriptors);
       if (invalid.length > 0) {
@@ -3347,4 +3385,5 @@ export const layer: Layer.Layer<
   | SecretRequests.SecretRequests
   | ServerSettings.ServerSettingsService
   | RemoteDelegation.RemoteDelegation
+  | UsageRouting.UsageRouting
 > = Layer.effect(OrchestratorMcpService, make);

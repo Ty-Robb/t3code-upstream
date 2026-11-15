@@ -212,6 +212,14 @@ describe("V2 storage cleanup eligibility", () => {
       resetIn: DAY_MS,
       idle: true,
     },
+    {
+      name: "not yet armed, usage-aware routing on",
+      armed: false,
+      settingsOff: true,
+      routing: true,
+      resetIn: DAY_MS,
+      idle: false,
+    },
   ])(
     "treats a usage-limited thread $name as idle: $idle",
     ({
@@ -221,6 +229,7 @@ describe("V2 storage cleanup eligibility", () => {
       autoResumeSetting = false,
       settled,
       settingsOff,
+      routing = false,
       resetIn,
       idle,
     }) => {
@@ -237,7 +246,11 @@ describe("V2 storage cleanup eligibility", () => {
             limitRecovery: armed ? { runId, resetAt, autoResume, snooze } : null,
           },
           NOW_MS,
-          { autoResumeLimitedThreads: autoResumeSetting, snoozeLimitedThreads: !settingsOff },
+          {
+            autoResumeLimitedThreads: autoResumeSetting,
+            snoozeLimitedThreads: !settingsOff,
+            usageAwareRouting: routing,
+          },
         ),
       ).toBe(idle);
     },

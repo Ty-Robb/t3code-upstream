@@ -35,8 +35,10 @@ import * as ThreadManagementService from "../orchestration-v2/ThreadManagementSe
 import type * as McpInvocationContext from "./McpInvocationContext.ts";
 import * as OrchestratorMcpService from "./OrchestratorMcpService.ts";
 import { liveThreadShell } from "./McpToolAccess.testkit.ts";
+import * as UsageRouting from "../usage/UsageRouting.ts";
 
 const layerOrchestratorService = OrchestratorMcpService.layer.pipe(
+  Layer.provide(UsageRouting.layerTest),
   Layer.provide(Layer.mock(ThreadLaunchService.ThreadLaunchService)({})),
   Layer.provide(Layer.mock(GitVcsDriver.GitVcsDriver)({})),
 );

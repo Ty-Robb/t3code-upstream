@@ -578,9 +578,11 @@ const layerOrchestrationV2Runtime = RuntimeLayer.layerProduction.pipe(
   ),
 );
 
-const layerOrchestrationApplication = Layer.merge(
+const layerOrchestrationApplication = Layer.mergeAll(
   CheckpointDiffQuery.layer,
   NativeChildWorkQuery.layer,
+  // Agent launches and delegated tasks share the recovery worker's routing service.
+  RuntimeLayer.layerUsageRoutingProvided,
 ).pipe(Layer.provideMerge(layerCheckpointStore), Layer.provideMerge(layerOrchestrationV2Runtime));
 
 const layerThreadSettlementWorker = Layer.effectDiscard(

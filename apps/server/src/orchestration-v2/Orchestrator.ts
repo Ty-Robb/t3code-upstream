@@ -5737,12 +5737,60 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         });
       }
     }
+    // A reset resume after an unstarted routed switch returns to the limited run's account.
+    let usageLimitResumeSelection: ModelSelection | undefined;
     if (command.usageLimitContinuationOfRunId !== undefined) {
       const run = usageLimitBlockedRun(projection.runs, projection.turnItems, null);
       const failure = latestRootProviderFailure(run, projection.turnItems);
       const recovery = projection.thread.limitRecovery;
       const now = yield* DateTime.now;
+      // A routed switch moves the thread when accepted. If a restart cancelled its continuation
+      // before it started, the thread still belongs to the limited run's account.
+      const unstartedSwitch =
+        run !== null &&
+        projection.thread.providerInstanceId !== run.providerInstanceId &&
+        projection.runs.some(
+          (candidate) =>
+            candidate.usageLimitContinuationOfRunId === run.id &&
+            candidate.status === "cancelled" &&
+            candidate.startedAt === null &&
+            candidate.providerInstanceId === projection.thread.providerInstanceId,
+        );
+      const onRunAccount =
+        run !== null &&
+        (projection.thread.providerInstanceId === run.providerInstanceId || unstartedSwitch);
+      if (unstartedSwitch && command.modelSelection === undefined) {
+        usageLimitResumeSelection = run.modelSelection;
+      }
+      // Usage-aware routing continues on another account while this one is still limited.
       if (
+        command.modelSelection !== undefined &&
+        run !== null &&
+        command.modelSelection.instanceId !== run.providerInstanceId
+      ) {
+        if (
+          run.id !== command.usageLimitContinuationOfRunId ||
+          failure?.class !== "usage_limit" ||
+          threadShellFromProjection(projection).lastErrorClass !== "usage_limit" ||
+          !failure.resetAt ||
+          Date.parse(failure.resetAt) <= DateTime.toEpochMillis(now) ||
+          command.dispatchMode.type !== "start_immediately" ||
+          projection.thread.archivedAt !== null ||
+          projection.thread.deletedAt !== null ||
+          projection.thread.settledOverride === "settled" ||
+          // A manual switch since the stop is the user's choice; routing does not override it.
+          !onRunAccount ||
+          projection.runtimeRequests.some((request) => request.status === "pending") ||
+          (projection.thread.snoozedUntil != null &&
+            DateTime.toEpochMillis(projection.thread.snoozedUntil) > DateTime.toEpochMillis(now))
+        ) {
+          return yield* new OrchestratorDispatchError({
+            commandId: command.commandId,
+            commandType: command.type,
+            cause: "The usage limit changed before the thread could move to another account.",
+          });
+        }
+      } else if (
         run?.id !== command.usageLimitContinuationOfRunId ||
         failure?.class !== "usage_limit" ||
         threadShellFromProjection(projection).lastErrorClass !== "usage_limit" ||
@@ -5754,7 +5802,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         projection.thread.archivedAt !== null ||
         projection.thread.deletedAt !== null ||
         projection.thread.settledOverride === "settled" ||
-        projection.thread.providerInstanceId !== run.providerInstanceId ||
+        !onRunAccount ||
         projection.runtimeRequests.some((request) => request.status === "pending") ||
         (projection.thread.snoozedUntil != null &&
           DateTime.toEpochMillis(projection.thread.snoozedUntil) > DateTime.toEpochMillis(now))
@@ -5926,7 +5974,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       ]);
       projection = applyToProjection(projection, event);
     }
-    const modelSelection = command.modelSelection ?? projection.thread.modelSelection;
+    const modelSelection =
+      command.modelSelection ?? usageLimitResumeSelection ?? projection.thread.modelSelection;
     let dispatchMode = resolveMessageDispatchIntent(
       projection,
       command.dispatchMode,

@@ -102,6 +102,38 @@ export function modelFallbackBannerItem({
   };
 }
 
+/** Usage-aware routing chose this account; the action returns to the other choice. */
+export function usageRoutingBannerItem({
+  id,
+  title,
+  description,
+  actionLabel,
+  onAction,
+  onDismiss,
+}: {
+  readonly id: string;
+  readonly title: string;
+  readonly description: string;
+  readonly actionLabel: string;
+  readonly onAction: () => void;
+  readonly onDismiss: () => void;
+}): ComposerBannerStackItem {
+  return {
+    id,
+    variant: "info",
+    icon: <GaugeIcon />,
+    title,
+    description,
+    actions: (
+      <Button size="xs" variant="ghost" onClick={onAction}>
+        {actionLabel}
+      </Button>
+    ),
+    dismissLabel: "Dismiss usage routing notice",
+    onDismiss,
+  };
+}
+
 function UsageLimitsBannerBody({
   report,
   environmentId,
