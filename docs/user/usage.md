@@ -6,6 +6,15 @@ desktop when the terminal is not focused. Customize `usage.open` in
 
 On mobile, choose **Usage** in the workspace navigation.
 
+When choosing a model, compare the remaining percentages beside each provider account.
+`50/80` means 50% session and 80% weekly capacity left. Hover for labelled limits,
+including model-specific allowances. A dash means a limit was not reported; `?` means
+its reset has passed and it needs a refresh. Search results also identify each account. Opening
+the picker checks limits automatically, at most once every five minutes per environment.
+Readings older than five minutes or past their reset say they need a refresh;
+missing readings are not treated as unused capacity.
+Open **Usage → Limits** to refresh manually or see reset times.
+
 ## Understand your usage
 
 **Usage** combines Codex, Claude Code, Grok Build, OpenCode, Antigravity, Pi, Muse Code, and Cursor history

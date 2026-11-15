@@ -628,6 +628,46 @@ export function remainingPercent(window: ServerProviderUsageWindow): number {
   return Math.round(100 - Math.max(0, Math.min(100, window.usedPercent)));
 }
 
+export function formatProviderUsageLimits(
+  provider: Pick<ServerProvider, "driver" | "usageLimits">,
+  now: number,
+  format: "full" | "compact" = "full",
+): string | null {
+  const limits = provider.usageLimits;
+  if (limits?.unavailable?.reason === "unsupported") return null;
+  if (limits?.unavailable?.reason === "probeFailed") return "Limits unavailable";
+  if (!limits?.windows.length) {
+    return limits || provider.driver === "claudeAgent" || provider.driver === "codex"
+      ? "Limits unknown"
+      : null;
+  }
+  if (now - Date.parse(limits.checkedAt) >= 5 * MINUTE) return "Limits need refresh";
+  if (format === "compact") {
+    const session = limits.windows.find(
+      (window) => window.kind === "session" && window.label === "Session",
+    );
+    const weekly = limits.windows.find(
+      (window) => window.kind === "weekly" && window.label === "Weekly",
+    );
+    if (session || weekly) {
+      const value = (window: ServerProviderUsageWindow | undefined) =>
+        !window
+          ? "-"
+          : window.resetsAt && Date.parse(window.resetsAt) <= now
+            ? "?"
+            : remainingPercent(window).toString();
+      return `${value(session)}/${value(weekly)}`;
+    }
+  }
+  return limits.windows
+    .map((window) =>
+      window.resetsAt && Date.parse(window.resetsAt) <= now
+        ? `${window.label} needs refresh`
+        : `${window.label} ${remainingPercent(window)}% left`,
+    )
+    .join(" · ");
+}
+
 function resetMillis(window: ServerProviderUsageWindow): number | null {
   if (window.resetsAt === undefined) return null;
   const at = Date.parse(window.resetsAt);

@@ -19,6 +19,8 @@ export const ModelListRow = memo(function ModelListRow(props: {
   instanceId: ProviderInstanceId;
   driverKind: ProviderDriverKind;
   providerDisplayName: string;
+  usageLabel?: string | null;
+  usageDescription?: string | null;
   providerAccentColor?: string | undefined;
   acpRegistryAgentId?: string | undefined;
   acpRegistryIconUrl?: string | undefined;
@@ -53,7 +55,6 @@ export const ModelListRow = memo(function ModelListRow(props: {
           "data-disabled:pointer-events-auto data-disabled:cursor-not-allowed",
       )}
     >
-      {/* One row shape in every tab: the logo names the provider, so Favorites needs no second line. */}
       <ProviderInstanceIcon
         driverKind={props.driverKind}
         displayName={props.providerDisplayName}
@@ -67,17 +68,40 @@ export const ModelListRow = memo(function ModelListRow(props: {
         badgeClassName="right-[-0.125rem] bottom-[-0.125rem] h-3 min-w-3 px-0.5 text-5xs"
       />
       <div className="flex min-w-0 flex-1 items-center gap-2 text-left">
-        <div
-          className="min-w-0 truncate text-sm font-normal leading-snug"
-          // Names the row in full on hover only when it is cut off.
-          onPointerEnter={(event) => {
-            const name = event.currentTarget;
-            name.title = name.scrollWidth > name.clientWidth ? getDisplayModelName(model) : "";
-          }}
-        >
-          {getDisplayModelName(model)}
-          {/* The logo is decorative, so name the provider for screen readers. */}
-          <span className="sr-only">, {props.providerDisplayName}</span>
+        <div className="min-w-0 flex-1">
+          <div
+            className="truncate text-sm font-normal leading-snug"
+            // Names the row in full on hover only when it is cut off.
+            onPointerEnter={(event) => {
+              const name = event.currentTarget;
+              name.title = name.scrollWidth > name.clientWidth ? getDisplayModelName(model) : "";
+            }}
+          >
+            {getDisplayModelName(model)}
+            {/* The logo is decorative, so name the provider for screen readers. */}
+            {props.usageLabel ? null : (
+              <span className="sr-only">, {props.providerDisplayName}</span>
+            )}
+          </div>
+          {props.usageLabel ? (
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <div className="truncate text-3xs leading-4 text-muted-foreground tabular-nums" />
+                }
+              >
+                <span aria-hidden="true">
+                  {props.providerDisplayName} · {props.usageLabel}
+                </span>
+                <span className="sr-only">
+                  {props.providerDisplayName} · {props.usageDescription ?? props.usageLabel}
+                </span>
+              </TooltipTrigger>
+              <TooltipPopup side="top">
+                {props.providerDisplayName} · {props.usageDescription ?? props.usageLabel}
+              </TooltipPopup>
+            </Tooltip>
+          ) : null}
         </div>
         {props.isSelected ? <CheckIcon className="size-3.5 shrink-0" aria-hidden="true" /> : null}
         {props.subProvider ? (

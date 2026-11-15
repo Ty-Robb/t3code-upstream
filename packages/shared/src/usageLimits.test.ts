@@ -23,6 +23,7 @@ import {
   paceRemainingPercent,
   usesChatGptSharing,
   resolveNewThreadModelSelection,
+  formatProviderUsageLimits,
 } from "./usageLimits.ts";
 
 const now = Date.parse("2026-09-03T12:00:00.000Z");
@@ -52,6 +53,113 @@ function provider(overrides: Partial<ServerProvider>): ServerProvider {
     ...overrides,
   };
 }
+
+describe("provider picker usage limits", () => {
+  it.each([
+    ["missing Claude reading", "claudeAgent", undefined, "Limits unknown"],
+    ["missing Codex reading", "codex", undefined, "Limits unknown"],
+    ["provider without quota reporting", "acpRegistry", undefined, null],
+    ["empty reading", "claudeAgent", { windows: [] }, "Limits unknown"],
+    [
+      "old reading before its reset",
+      "claudeAgent",
+      { checkedAt: "2026-09-03T11:55:00.000Z", windows: [window] },
+      "Limits need refresh",
+    ],
+    [
+      "old reading without a reset time",
+      "claudeAgent",
+      {
+        checkedAt: "2026-09-03T11:00:00.000Z",
+        windows: [{ id: "monthly", kind: "monthly", label: "Monthly", usedPercent: 10 }],
+      },
+      "Limits need refresh",
+    ],
+    [
+      "fresh reading without a reset time",
+      "claudeAgent",
+      { windows: [{ id: "monthly", kind: "monthly", label: "Monthly", usedPercent: 10 }] },
+      "Monthly 90% left",
+    ],
+    [
+      "unsupported account",
+      "claudeAgent",
+      { windows: [], unavailable: { reason: "unsupported" } },
+      null,
+    ],
+    [
+      "failed probe with retained windows",
+      "claudeAgent",
+      { windows: [window], unavailable: { reason: "probeFailed" } },
+      "Limits unavailable",
+    ],
+    [
+      "expired reading",
+      "claudeAgent",
+      { windows: [{ ...window, resetsAt: "2026-09-03T12:00:00.000Z" }] },
+      "Session needs refresh",
+      "?/-",
+    ],
+    [
+      "separate session and weekly allowances",
+      "claudeAgent",
+      {
+        windows: [
+          window,
+          { ...window, id: "seven_day", kind: "weekly", label: "Weekly", usedPercent: 100 },
+          {
+            ...window,
+            id: "seven_day_opus",
+            kind: "weekly",
+            label: "Weekly Opus",
+            usedPercent: 10,
+          },
+        ],
+      },
+      "Session 60% left · Weekly 0% left · Weekly Opus 90% left",
+      "60/0",
+    ],
+    [
+      "weekly reading without session capacity",
+      "claudeAgent",
+      { windows: [{ ...window, id: "seven_day", kind: "weekly", label: "Weekly" }] },
+      "Weekly 60% left",
+      "-/60",
+    ],
+    [
+      "session and weekly in reverse order",
+      "codex",
+      {
+        windows: [
+          { ...window, id: "secondary", kind: "weekly", label: "Weekly", usedPercent: 20 },
+          window,
+        ],
+      },
+      "Weekly 80% left · Session 60% left",
+      "60/80",
+    ],
+  ] satisfies ReadonlyArray<
+    readonly [
+      string,
+      string,
+      (
+        | (Omit<NonNullable<ServerProvider["usageLimits"]>, "checkedAt"> & {
+            readonly checkedAt?: string;
+          })
+        | undefined
+      ),
+      string | null,
+      (string | null)?,
+    ]
+  >)("%s", (_name, driver, limits, expected, expectedCompact: string | null = expected) => {
+    const account = provider({
+      driver: ProviderDriverKind.make(driver),
+      ...(limits ? { usageLimits: { checkedAt: "2026-09-03T11:59:00.000Z", ...limits } } : {}),
+    });
+    expect(formatProviderUsageLimits(account, now)).toBe(expected);
+    expect(formatProviderUsageLimits(account, now, "compact")).toBe(expectedCompact);
+  });
+});
 
 describe("new thread model fallback", () => {
   const selection = { instanceId: ProviderInstanceId.make("codex"), model: "gpt-6.1-sol" };

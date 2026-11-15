@@ -119,6 +119,9 @@ import {
   providerSectionIsCollapsed,
 } from "./thread-settings-sheet-state";
 import { formatProviderUpdateRequiredNotice } from "@t3tools/client-runtime/providerUpdateRequiredModels";
+import { formatProviderUsageLimits } from "@t3tools/shared/usageLimits";
+import { useNowMinuteMs } from "../../lib/clock";
+import { limitsAutoRefreshSetAtom } from "../usage/usageLimitsRefresh";
 
 const PRIMARY_PROVIDER_DRIVERS: ReadonlySet<string> = new Set([
   "claudeAgent",
@@ -147,6 +150,8 @@ function ProviderHeader(props: {
   readonly driver: string | undefined;
   readonly iconUrl: string | undefined;
   readonly label: string;
+  readonly usageLabel: string | null;
+  readonly usageDescription: string | null;
   readonly collapsible: boolean;
   readonly collapsed: boolean;
   readonly modelCount: number;
@@ -155,10 +160,19 @@ function ProviderHeader(props: {
   const content = (
     <>
       <ProviderIcon iconUrl={props.iconUrl} provider={props.driver} size={15} />
-      <Text className="text-sm font-t3-medium text-foreground-muted">{props.label}</Text>
+      <View className="min-w-0 flex-1 gap-1 py-1">
+        <Text className="text-sm font-t3-medium text-foreground-muted">{props.label}</Text>
+        {props.usageLabel ? (
+          <Text
+            accessibilityLabel={props.usageDescription ?? props.usageLabel}
+            className="text-xs text-foreground-muted"
+          >
+            {props.usageLabel}
+          </Text>
+        ) : null}
+      </View>
       {props.collapsible ? (
         <>
-          <View className="flex-1" />
           {props.collapsed ? (
             <Text className="text-2xs font-t3-medium text-foreground-muted">
               {props.modelCount}
@@ -178,7 +192,9 @@ function ProviderHeader(props: {
   if (props.collapsible) {
     return (
       <Pressable
-        accessibilityLabel={`${props.label}, ${props.modelCount} models`}
+        accessibilityLabel={[props.label, props.usageDescription, `${props.modelCount} models`]
+          .filter(Boolean)
+          .join(", ")}
         accessibilityRole="button"
         accessibilityState={{ expanded: !props.collapsed }}
         className="mx-4 mt-1 min-h-11 flex-row items-center gap-2 rounded-xl px-1 pt-2 active:opacity-60 android:min-h-12"
@@ -284,6 +300,10 @@ type ThreadSettingsSessionValue = {
   readonly environmentId: EnvironmentId | null;
   readonly providerInstanceId?: ProviderInstanceId;
   readonly providerGroups: ReadonlyArray<ProviderGroup>;
+  readonly providerUsageLabels: ReadonlyMap<
+    string,
+    Pick<ThreadSettingsProviderCatalog, "usageLabel" | "usageDescription">
+  >;
   readonly favoriteKeys: ReadonlySet<string>;
   readonly favoritesLoaded: boolean;
   readonly toggleFavorite: (option: ModelOption) => void;
@@ -324,11 +344,31 @@ function ThreadSettingsSessionProvider(
   const preferences = useAtomValue(mobilePreferencesAtom);
   const configs = useAtomValue(environmentServerConfigsAtom);
   const config = props.environmentId ? configs.get(props.environmentId) : undefined;
+  const canRefreshLimits = useAtomValue(
+    serverEnvironment.refreshProviders.permissionAtom(props.environmentId),
+  );
+  const now = useNowMinuteMs();
+  const providerUsageLabels = new Map(
+    config?.providers.map((provider) => [
+      provider.instanceId,
+      {
+        usageLabel: formatProviderUsageLimits(provider, now, "compact"),
+        usageDescription: formatProviderUsageLimits(provider, now),
+      },
+    ]),
+  );
   const settings = config?.settings;
   const connection = useEnvironmentQuery(
     props.environmentId ? environmentCatalog.stateAtom(props.environmentId) : null,
   ).data;
   const connectionGeneration = connection?.phase === "connected" ? connection.generation : null;
+  useAtomValue(
+    limitsAutoRefreshSetAtom(
+      canRefreshLimits && connection?.phase === "connected" && config
+        ? (props.environmentId ?? "")
+        : "",
+    ),
+  );
   const [manageHidden, setManageHidden] = useState(false);
   const pendingHidden = useRef(new Set<string>());
   const pendingFavorites = useRef(
@@ -596,6 +636,7 @@ function ThreadSettingsSessionProvider(
     environmentId: props.environmentId,
     providerInstanceId: props.providerInstanceId,
     providerGroups,
+    providerUsageLabels,
     manageHidden,
     setManageHidden,
     toggleHidden,
@@ -647,6 +688,8 @@ type ThreadSettingsProviderCatalog = {
   readonly driver: string | undefined;
   readonly iconUrl: string | undefined;
   readonly label: string;
+  readonly usageLabel: string | null;
+  readonly usageDescription: string | null;
   readonly collapsible: boolean;
   readonly collapsed: boolean;
   readonly modelCount: number;
@@ -721,6 +764,8 @@ function ThreadSettingsProviderListHeader(props: {
       driver={props.provider.driver}
       iconUrl={props.provider.iconUrl}
       label={props.provider.label}
+      usageLabel={props.provider.usageLabel}
+      usageDescription={props.provider.usageDescription}
       modelCount={props.provider.modelCount}
       onToggle={onToggle}
     />
@@ -782,6 +827,9 @@ function buildThreadSettingsCatalogItems(
       driver,
       iconUrl: group.models[0]?.providerIconUrl,
       label: group.providerLabel,
+      usageLabel: session.providerUsageLabels.get(group.providerKey)?.usageLabel ?? null,
+      usageDescription:
+        session.providerUsageLabels.get(group.providerKey)?.usageDescription ?? null,
       collapsible,
       collapsed,
       modelCount: visibleModels.length,

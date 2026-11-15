@@ -1,10 +1,12 @@
 import { Toolbar } from "@base-ui/react/toolbar";
 import { type ProviderInstanceId } from "@t3tools/contracts";
+import { formatProviderUsageLimits } from "@t3tools/shared/usageLimits";
 import { memo, useLayoutEffect, useRef, useState } from "react";
 import { StarIcon } from "lucide-react";
 import { ProviderInstanceIcon } from "./ProviderInstanceIcon";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { cn } from "~/lib/utils";
+import { useNowMinute } from "../../hooks/useNowMinute";
 import {
   isProviderInstancePickerReady,
   shouldShowInstanceBadge,
@@ -39,6 +41,15 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
   selectableUnavailableInstanceIds?: ReadonlySet<ProviderInstanceId>;
   getDisabledInstanceTooltip?: (entry: ProviderInstanceEntry) => string;
 }) {
+  const nowMinute = useNowMinute();
+  const now = Date.parse(`${nowMinute}:00Z`);
+  const usageLabels = new Map(
+    props.instanceEntries.map((entry) => [
+      entry.instanceId,
+      formatProviderUsageLimits(entry.snapshot, now),
+    ]),
+  );
+  const showUsage = [...usageLabels.values()].some((label) => label !== null);
   const handleSelect = (instanceId: ProviderInstanceId | "favorites") => {
     props.onSelectInstance(instanceId);
   };
@@ -65,11 +76,12 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
     props.instanceEntries,
     props.selectedInstanceId,
     showFavorites,
+    nowMinute,
   ]);
 
   return (
     <Toolbar.Root
-      className="w-11 shrink-0 overflow-hidden bg-muted/30"
+      className={cn("shrink-0 overflow-hidden bg-muted/30", showUsage ? "w-32" : "w-11")}
       data-model-picker-sidebar="true"
       aria-label="Providers"
       orientation="vertical"
@@ -99,7 +111,8 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
                     render={
                       <Toolbar.Button
                         className={cn(
-                          "relative isolate flex w-full cursor-pointer aspect-square items-center justify-center rounded-md transition-colors hover:bg-foreground/10 focus-visible:bg-foreground/10 focus-visible:outline-none",
+                          "relative isolate flex w-full cursor-pointer items-center justify-center rounded-md transition-colors hover:bg-foreground/10 focus-visible:bg-foreground/10 focus-visible:outline-none",
+                          showUsage ? "min-h-9 gap-2 px-2" : "aspect-square",
                         )}
                         onClick={() => handleSelect("favorites")}
                         type="button"
@@ -107,6 +120,7 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
                         aria-pressed={props.selectedInstanceId === "favorites"}
                       >
                         <StarIcon className="size-5 fill-current shrink-0" aria-hidden />
+                        {showUsage ? <span className="text-xs">Favorites</span> : null}
                       </Toolbar.Button>
                     }
                   />
@@ -133,17 +147,21 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
             const isSelected = props.selectedInstanceId === entry.instanceId;
             const isHovered = hoveredInstanceId === entry.instanceId;
             const showInstanceBadge = shouldShowInstanceBadge(entry, props.instanceEntries);
+            const usageLabel = usageLabels.get(entry.instanceId);
+            const compactUsageLabel = formatProviderUsageLimits(entry.snapshot, now, "compact");
 
-            const tooltip = isUnavailable
+            const statusTooltip = isUnavailable
               ? describeUnavailableInstance(entry)
               : isContextDisabled
                 ? (props.getDisabledInstanceTooltip?.(entry) ?? entry.displayName)
                 : entry.displayName;
+            const tooltip = usageLabel ? `${statusTooltip}. ${usageLabel}` : statusTooltip;
 
             const button = (
               <Toolbar.Button
                 className={cn(
-                  "relative isolate flex w-full cursor-pointer aspect-square items-center justify-center rounded-md transition-colors hover:bg-foreground/10 focus-visible:bg-foreground/10 focus-visible:outline-none",
+                  "relative isolate flex w-full cursor-pointer items-center justify-center rounded-md transition-colors hover:bg-foreground/10 focus-visible:bg-foreground/10 focus-visible:outline-none",
+                  showUsage ? "flex-col gap-1 px-2 py-2" : "aspect-square",
                   isDisabled && "opacity-50 cursor-not-allowed hover:bg-transparent",
                 )}
                 data-provider-accent-color={entry.accentColor}
@@ -160,7 +178,8 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
                 focusableWhenDisabled={!isDisabled}
                 aria-pressed={isSelected}
                 type="button"
-                aria-label={isUnavailable || isContextDisabled ? tooltip : entry.displayName}
+                aria-label={statusTooltip}
+                aria-description={usageLabel ?? undefined}
               >
                 <ProviderInstanceIcon
                   driverKind={entry.driverKind}
@@ -180,6 +199,21 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
                   }
                   {...(entry.accentColor ? { badgeClassName: "h-3 min-w-3 px-0.5 text-5xs" } : {})}
                 />
+                {showUsage ? (
+                  <span className="flex w-full min-w-0 flex-col gap-0.5 text-center">
+                    <span className="break-words whitespace-normal text-xs font-medium">
+                      {entry.displayName}
+                    </span>
+                    {usageLabel ? (
+                      <span
+                        aria-hidden="true"
+                        className="text-3xs leading-4 text-muted-foreground tabular-nums"
+                      >
+                        {compactUsageLabel}
+                      </span>
+                    ) : null}
+                  </span>
+                ) : null}
               </Toolbar.Button>
             );
 

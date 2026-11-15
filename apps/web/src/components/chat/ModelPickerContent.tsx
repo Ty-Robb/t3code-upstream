@@ -7,8 +7,10 @@ import {
   MODEL_PICKER_JUMP_KEYBINDING_COMMANDS,
 } from "@t3tools/contracts";
 import { resolveSelectableModel } from "@t3tools/shared/model";
+import { formatProviderUsageLimits } from "@t3tools/shared/usageLimits";
 import { useAtomValue } from "@effect/atom-react";
 import { formatProviderUpdateRequiredNotice } from "@t3tools/client-runtime/providerUpdateRequiredModels";
+import { refreshUsageLimits } from "@t3tools/client-runtime/state/usage";
 import { useNavigate } from "@tanstack/react-router";
 import { LegendList, type LegendListRef } from "@legendapp/list/react";
 import {
@@ -42,6 +44,10 @@ import { ModelEsque } from "./providerIconUtils";
 import { isCommandPaletteOpen } from "../../commandPaletteBus";
 import { registerModelPickerContent } from "../../modelPickerVisibility";
 import { primaryServerKeybindingsAtom } from "../../state/server";
+import { serverEnvironment } from "../../state/server";
+import { useAtomCommand } from "../../state/use-atom-command";
+import { useNowMinute } from "../../hooks/useNowMinute";
+import { useEnvironmentPresentation } from "../../state/presentation";
 import {
   modelPickerJumpCommandForIndex,
   modelPickerJumpIndexFromCommand,
@@ -74,6 +80,8 @@ type ModelPickerItem = {
   instanceId: ProviderInstanceId;
   driverKind: ProviderDriverKind;
   instanceDisplayName: string;
+  usageLabel: string | null;
+  usageDescription: string | null;
   instanceAccentColor?: string | undefined;
   acpRegistryAgentId?: string | undefined;
   acpRegistryIconUrl?: string | undefined;
@@ -165,6 +173,7 @@ const EMPTY_MODEL_JUMP_LABELS = new Map<string, string>();
 const MODEL_LIST_ESTIMATED_ITEM_SIZE = 32;
 // Rendered heights in `--spacing` units. Chrome is the search box and list padding, plus a 1px border.
 const ROW_UNITS = 8;
+const USAGE_ROW_UNITS = 12;
 const ROW_SEPARATOR_UNITS = 0.5;
 const LIST_CHROME_UNITS = 15.5;
 
@@ -255,11 +264,13 @@ function ModelPickerList({
   itemKeys,
   extraData,
   renderItem,
+  estimatedItemSize,
 }: {
   listRef: RefObject<LegendListRef | null>;
   itemKeys: ReadonlyArray<string>;
   extraData: unknown;
   renderItem: (props: { item: string; index: number }) => ReactNode;
+  estimatedItemSize: number;
 }) {
   const [showTopScrollFade, setShowTopScrollFade] = useState(false);
   const [showBottomScrollFade, setShowBottomScrollFade] = useState(false);
@@ -310,7 +321,7 @@ function ModelPickerList({
           extraData={extraData}
           keyExtractor={(modelKey) => modelKey}
           renderItem={renderItem}
-          estimatedItemSize={MODEL_LIST_ESTIMATED_ITEM_SIZE}
+          estimatedItemSize={estimatedItemSize}
           drawDistance={480}
           recycleItems
           contentContainerClassName="pl-2 pr-px"
@@ -369,6 +380,28 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
   /** Closes the list column, inside the popup's fixed height. */
   listFooter?: ReactNode;
 }) {
+  const nowMinute = useNowMinute();
+  const now = Date.parse(`${nowMinute}:00Z`);
+  const { presentation } = useEnvironmentPresentation(props.environmentId);
+  const connected =
+    presentation?.connection.phase === "connected" && presentation.serverConfig !== null;
+  const canRefreshLimits = useAtomValue(
+    serverEnvironment.refreshProviders.permissionAtom(props.environmentId),
+  );
+  const refreshProviders = useAtomCommand(serverEnvironment.refreshProviders, {
+    reportFailure: false,
+  });
+  const refreshLimits = useEffectEvent((environmentId: EnvironmentId) => {
+    void refreshUsageLimits(
+      environmentId,
+      () => refreshProviders({ environmentId, input: {} }),
+      true,
+    );
+  });
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- refreshes remote quota snapshots when the model picker opens; shared throttling prevents repeated probes
+  useEffect(() => {
+    if (props.environmentId && canRefreshLimits && connected) refreshLimits(props.environmentId);
+  }, [props.environmentId, canRefreshLimits, connected]);
   const {
     searchInputRef,
     keybindings: providedKeybindings,
@@ -571,6 +604,8 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
           instanceId,
           driverKind: entry.driverKind,
           instanceDisplayName: entry.displayName,
+          usageLabel: formatProviderUsageLimits(entry.snapshot, now, "compact"),
+          usageDescription: formatProviderUsageLimits(entry.snapshot, now),
           ...(entry.accentColor ? { instanceAccentColor: entry.accentColor } : {}),
           ...(entry.acpRegistryAgentId ? { acpRegistryAgentId: entry.acpRegistryAgentId } : {}),
           ...(entry.acpRegistryIconUrl ? { acpRegistryIconUrl: entry.acpRegistryIconUrl } : {}),
@@ -588,18 +623,15 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
   // Fit the tallest tab so switching tabs never resizes the popup and moves the rail under the cursor.
   const tallestTabUnits = (() => {
     const unitsByTab = new Map<ProviderInstanceId | "favorites", number>();
-    const addRow = (tab: ProviderInstanceId | "favorites") => {
+    const addRow = (tab: ProviderInstanceId | "favorites", units = ROW_UNITS) => {
       const previous = unitsByTab.get(tab);
-      unitsByTab.set(
-        tab,
-        previous === undefined ? ROW_UNITS : previous + ROW_SEPARATOR_UNITS + ROW_UNITS,
-      );
+      unitsByTab.set(tab, previous === undefined ? units : previous + ROW_SEPARATOR_UNITS + units);
     };
     const tabsWithLegacyRow = new Set<ProviderInstanceId>();
     for (const model of flatModels) {
       if (!matchesLockedProvider(model)) continue;
       const isFavorite = favoritesSet.has(providerModelKey(model.instanceId, model.slug));
-      if (isFavorite) addRow("favorites");
+      if (isFavorite) addRow("favorites", model.usageLabel ? USAGE_ROW_UNITS : ROW_UNITS);
       if (model.isLegacy && !isFavorite) {
         tabsWithLegacyRow.add(model.instanceId);
       } else {
@@ -1012,6 +1044,12 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
               listRef={modelListRef}
               itemKeys={filteredItemKeys}
               extraData={modelListExtraData}
+              estimatedItemSize={
+                (isSearching || selectedInstanceId === "favorites") &&
+                visibleModels.some((model) => model.usageLabel)
+                  ? USAGE_ROW_UNITS * 4
+                  : MODEL_LIST_ESTIMATED_ITEM_SIZE
+              }
               renderItem={({ item: modelKey, index }) => {
                 if (legacySection?.key === modelKey) {
                   return (
@@ -1044,6 +1082,10 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
                     instanceId={model.instanceId}
                     driverKind={model.driverKind}
                     providerDisplayName={model.instanceDisplayName}
+                    usageLabel={
+                      isSearching || selectedInstanceId === "favorites" ? model.usageLabel : null
+                    }
+                    usageDescription={model.usageDescription}
                     providerAccentColor={model.instanceAccentColor}
                     acpRegistryAgentId={model.acpRegistryAgentId}
                     acpRegistryIconUrl={model.acpRegistryIconUrl}

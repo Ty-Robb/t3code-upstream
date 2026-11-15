@@ -1,4 +1,5 @@
 import { ProviderDriverKind, ProviderInstanceId, type ModelSelection } from "@t3tools/contracts";
+import { minuteTick } from "@t3tools/client-runtime/clock";
 import { useState } from "react";
 import { expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
@@ -8,6 +9,80 @@ import "~/index.css";
 import { render } from "../../../test/render";
 import { deriveProviderInstanceEntries } from "../../providerInstances";
 import { ProviderModelPicker } from "./ProviderModelPicker";
+
+it("compares Claude account limits and selects the account with capacity", async () => {
+  using _minute = vi.spyOn(minuteTick, "getSnapshot").mockReturnValue("2026-11-15T12:00");
+  const checkedAt = "2026-11-15T12:00:00.000Z";
+  const entries = deriveProviderInstanceEntries(
+    [
+      { name: "Claude personal", usedPercent: 100, weeklyUsedPercent: 95 },
+      { name: "Claude work", usedPercent: 20, weeklyUsedPercent: 40 },
+    ].map(({ name, usedPercent, weeklyUsedPercent }) => ({
+      instanceId: ProviderInstanceId.make(name.replaceAll(" ", "-")),
+      driver: ProviderDriverKind.make("claudeAgent"),
+      displayName: name,
+      enabled: true,
+      installed: true,
+      version: null,
+      status: "ready" as const,
+      auth: { status: "authenticated" as const },
+      checkedAt,
+      usageLimits: {
+        checkedAt,
+        windows: [
+          {
+            id: "five_hour",
+            kind: "session" as const,
+            label: "Session",
+            usedPercent,
+            resetsAt: "2026-11-15T14:00:00.000Z",
+          },
+          {
+            id: "seven_day",
+            kind: "weekly" as const,
+            label: "Weekly",
+            usedPercent: weeklyUsedPercent,
+            resetsAt: "2026-11-20T14:00:00.000Z",
+          },
+        ],
+      },
+      models: [{ slug: "claude-sonnet", name: "Sonnet", isCustom: false, capabilities: {} }],
+      slashCommands: [],
+      skills: [],
+    })),
+  );
+  const onSelect = vi.fn();
+  await using screen = await render(
+    <ProviderModelPicker
+      environmentId={null}
+      activeInstanceId={ProviderInstanceId.make("Claude-personal")}
+      model="claude-sonnet"
+      lockedProvider={null}
+      instanceEntries={entries}
+      modelOptionsByInstance={new Map(entries.map((entry) => [entry.instanceId, entry.models]))}
+      onInstanceModelChange={onSelect}
+      triggerAriaLabel="Choose model"
+    />,
+  );
+  await screen.getByRole("button", { name: "Choose model" }).click();
+  const personal = page.getByRole("button", { name: "Claude personal", exact: true });
+  const work = page.getByRole("button", { name: "Claude work", exact: true });
+  await expect.element(personal.getByText("0/5")).toBeInTheDocument();
+  await expect.element(work.getByText("80/60")).toBeInTheDocument();
+  await userEvent.hover(work);
+  await expect
+    .element(page.getByText("Claude work. Session 80% left · Weekly 60% left", { exact: true }))
+    .toBeInTheDocument();
+  await work.click();
+  await page.getByRole("option", { name: /Sonnet/ }).click();
+  expect(onSelect).toHaveBeenCalledWith(ProviderInstanceId.make("Claude-work"), "claude-sonnet");
+  await screen.getByRole("button", { name: "Choose model" }).click();
+  await userEvent.type(page.getByPlaceholder("Search models..."), "Sonnet");
+  await expect
+    .element(page.getByRole("option", { name: /Claude work/ }).getByText("Claude work · 80/60"))
+    .toBeInTheDocument();
+  await userEvent.keyboard("{Escape}");
+});
 
 it("keeps each registry image when adding a model from another ACP agent", async () => {
   const icons = [
