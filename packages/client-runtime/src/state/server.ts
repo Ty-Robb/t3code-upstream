@@ -1365,6 +1365,13 @@ export function createServerEnvironmentAtoms<R, E>(
           ),
         ),
     }),
+    // Totals only move when a thread finishes or a pull request changes, so a short cache is
+    // enough; the dashboard's refresh button re-reads on demand.
+    workSummary: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:server:work-summary",
+      tag: WS_METHODS.serverGetWorkSummary,
+      staleTimeMs: 30_000,
+    }),
     resourceTelemetry: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
       label: "environment-data:server:resource-telemetry",
       tag: WS_METHODS.subscribeResourceTelemetry,

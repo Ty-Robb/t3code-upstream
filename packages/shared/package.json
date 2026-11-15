@@ -379,6 +379,10 @@
       "types": "./src/usageMerge.ts",
       "import": "./src/usageMerge.ts"
     },
+    "./workSummary": {
+      "types": "./src/workSummary.ts",
+      "import": "./src/workSummary.ts"
+    },
     "./usageFormat": {
       "types": "./src/usageFormat.ts",
       "import": "./src/usageFormat.ts"
