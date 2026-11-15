@@ -8,7 +8,7 @@ import { scopedThreadKey } from "../../lib/scopedEntities";
 import { threadAllowsProviderSwitch } from "../../state/thread-provider-switching";
 import { useComposerDraftSettings } from "../../state/use-composer-drafts";
 import { useQuietThreadStructure } from "../../state/use-thread-detail";
-import { updateThreadDraftModelSelection } from "../../state/use-thread-composer-state";
+import { selectThreadModel } from "../../state/thread-model-selection";
 
 /** Usage-aware routing moved this thread to another account; offers the way back. */
 export function UsageRoutingSwitchCard(props: {
@@ -54,7 +54,12 @@ export function UsageRoutingSwitchCard(props: {
         {canSwitchBack ? (
           <CardAction
             label={`Switch back to ${from}`}
-            onPress={() => updateThreadDraftModelSelection(draftKey, accountSwitch.from)}
+            onPress={() =>
+              selectThreadModel(
+                { environmentId: props.thread.environmentId, threadId: props.thread.id },
+                accountSwitch.from,
+              )
+            }
           />
         ) : null}
         <CardAction label="Dismiss" onPress={() => setDismissedFor(key)} />
