@@ -117,7 +117,7 @@ export const readWorkSummary = Effect.fn("WorkSummary.read")(
         json_extract(link.value, '$.snapshot.syncedAt') AS "syncedAt"
       FROM orchestration_v2_projection_threads AS t
       JOIN json_each(t.payload_json, '$.pullRequests') AS link
-      WHERE json_extract(link.value, '$.source') != 'stack-dismissed'
+      WHERE json_extract(link.value, '$.source') IS NOT 'stack-dismissed'
         AND t.deleted_at IS NULL ${scope}
     `.pipe(NodeSqliteClient.readOnly);
 

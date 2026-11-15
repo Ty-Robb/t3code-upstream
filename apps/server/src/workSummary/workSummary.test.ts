@@ -237,6 +237,8 @@ it.effect("sends every non-dismissed pull request once and never their titles", 
         // Opened after the window ended.
         link({ number: 6, source: "created", linkedAt: "2026-11-01T00:00:00.000Z" }),
         link({ number: 7, source: "stack-dismissed", linkedAt: "2026-10-09T00:00:00.000Z" }),
+        // A link written before sources existed is still a link.
+        { ...link({ number: 10, linkedAt: "2026-10-09T00:00:00.000Z" }), source: undefined },
       ],
     });
     // A pull request linked only from a subagent thread is still real work.
@@ -254,7 +256,7 @@ it.effect("sends every non-dismissed pull request once and never their titles", 
     const summary = yield* readWorkSummary(input);
     assert.deepStrictEqual(
       summary.pullRequests.map((row) => row.number).toSorted((a, b) => a - b),
-      [1, 2, 3, 4, 5, 6, 8],
+      [1, 2, 3, 4, 5, 6, 8, 10],
     );
     assert.notInclude(JSON.stringify(summary), "Private title");
     assert.notInclude(JSON.stringify(summary), "private-branch");

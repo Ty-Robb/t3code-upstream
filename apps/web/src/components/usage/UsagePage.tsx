@@ -599,10 +599,12 @@ export function UsagePage() {
                     workShareInputFromTotals(work.totals, {
                       periodLabel: windowDays === 1 ? "Past 24 hours" : `Last ${windowDays} days`,
                       projectLabel:
-                        workProjectKeys?.size === 1
-                          ? (workProjects.find((project) => workProjectKeys.has(project.key))
-                              ?.title ?? null)
-                          : null,
+                        workProjectKeys === null
+                          ? null
+                          : workProjectKeys.size === 1
+                            ? (workProjects.find((project) => workProjectKeys.has(project.key))
+                                ?.title ?? null)
+                            : `${workProjectKeys.size} selected projects`,
                     }),
                   )
                 }
