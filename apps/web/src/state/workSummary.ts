@@ -11,6 +11,7 @@ import { resolveWorkSummaryAccess } from "@t3tools/client-runtime/state/work-sum
 import { deriveWorkSummaryTotals } from "@t3tools/shared/workSummary";
 import * as Option from "effect/Option";
 import { AsyncResult, Atom } from "effect/reactivity";
+import { useState } from "react";
 
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { environmentPresentations } from "./presentation";
@@ -151,16 +152,29 @@ export function useWorkSummary(
   scope: WorkScope,
   enabled: boolean,
 ): WorkView {
-  const { environments, summaries } = useAtomValue(
+  const current = useAtomValue(
     enabled ? workByWindowAtom(selectionKeyOf(window, scope)) : NO_WORK_ATOM,
   );
+  // A new window or scope reads from scratch; keep the last answered figures on screen meanwhile.
+  const [answered, setAnswered] = useState<{
+    readonly selection: WorkSelection;
+    readonly window: WorkSummaryWindow;
+  } | null>(null);
+  if (current.summaries.length > 0 && answered?.selection !== current) {
+    setAnswered({ selection: current, window });
+  }
+  const waiting =
+    current.summaries.length === 0 &&
+    current.environments.some((environment) => environment.isPending);
+  const shown = waiting && answered !== null ? answered : { selection: current, window };
+  const { environments, summaries } = shown.selection;
   // Staleness is judged at the time the figures were read, which keeps this render pure.
   const readAt = summaries.reduce(
     (latest, summary) => Math.max(latest, Date.parse(summary.readAt)),
     0,
   );
   const totals = deriveWorkSummaryTotals({
-    window,
+    window: shown.window,
     summaries,
     environmentsTotal: environments.length,
     now: readAt,
@@ -168,7 +182,7 @@ export function useWorkSummary(
   return {
     environments,
     totals,
-    isPending: summaries.length === 0 && environments.some((environment) => environment.isPending),
-    isReading: environments.some((environment) => environment.isPending),
+    isPending: summaries.length === 0 && waiting,
+    isReading: current.environments.some((environment) => environment.isPending),
   };
 }
