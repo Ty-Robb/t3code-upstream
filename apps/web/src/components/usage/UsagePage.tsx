@@ -38,7 +38,14 @@ import { primaryServerKeybindingsAtom, serverEnvironment } from "../../state/ser
 import { isCommandPaletteOpen } from "../../commandPaletteBus";
 import { isModelPickerOpen } from "../../modelPickerVisibility";
 import { shortcutLabelForCommand } from "../../keybindings";
+import { useProjects } from "../../state/entities";
 import { useUsage, type EnvironmentUsageStatus } from "../../state/usage";
+import {
+  refreshWorkSummary,
+  useWorkSummary,
+  workProjectKey,
+  type WorkScope,
+} from "../../state/workSummary";
 import { useAtomCommand } from "../../state/use-atom-command";
 import {
   enumerateDays,
@@ -54,6 +61,7 @@ import {
   makeWindow,
   usageSourceMessages,
 } from "@t3tools/shared/usageFormat";
+import { makeWorkSummaryWindow } from "@t3tools/shared/workSummary";
 import { Button, InlineButton } from "../ui/button";
 import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
 import {
@@ -82,6 +90,7 @@ import { UsagePriceOverrides } from "./UsagePriceOverrides";
 import { UsageProviderChart } from "./UsageProviderChart";
 import { SpeedPremium, UsageModelDialog } from "./UsageModelDialog";
 import { UsageShareBar } from "./UsageShareBar";
+import { WorkProjectFilter, WorkSummaryView } from "./WorkSummaryView";
 import {
   costTypeSegments,
   modelShare,
@@ -196,6 +205,9 @@ export function UsagePage() {
   }));
   const metric = preferences.metric;
   const showingLimits = metric === "limits";
+  const showingWork = metric === "work";
+  const [workWindow, setWorkWindow] = useState(() => makeWorkSummaryWindow(preferences.windowDays));
+  const [workProjectKeys, setWorkProjectKeys] = useState<ReadonlySet<string> | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [limitsNow, setLimitsNow] = useState(() => Date.now());
   const refreshingRef = useRef(false);
@@ -219,6 +231,23 @@ export function UsagePage() {
   const refreshingUsage = isRefreshing && !showingLimits;
   const showingKept = shown !== null && shown.window !== window;
   const presentations = useAtomValue(environmentPresentations.presentationsAtom);
+  const workScope: WorkScope = {
+    environmentIds: selectedEnvironmentIds,
+    projectKeys: workProjectKeys,
+  };
+  const work = useWorkSummary(workWindow, workScope, showingWork);
+  const workProjects = useProjects()
+    .filter(
+      (project) =>
+        selectedEnvironmentIds === null || selectedEnvironmentIds.has(project.environmentId),
+    )
+    .map((project) => ({
+      key: workProjectKey(project.environmentId, project.id),
+      environmentId: project.environmentId,
+      environmentLabel:
+        presentations.get(project.environmentId)?.entry.target.label ?? project.environmentId,
+      title: project.title,
+    }));
   const presentationsWithProviders = useAtomValue(
     environmentPresentations.presentationsWithProvidersAtom,
   );
@@ -238,6 +267,7 @@ export function UsagePage() {
   const selectWindow = (days: number) => {
     if (!isUsageWindowDays(days)) return;
     updatePreferences({ windowDays: days });
+    setWorkWindow(makeWorkSummaryWindow(days));
     setWindowSelection({
       days,
       window: makeWindow(days, undefined, days === 1 ? "hour" : "day"),
@@ -245,6 +275,7 @@ export function UsagePage() {
   };
   const selectMetric = (nextMetric: UsageMetric) => {
     if (nextMetric === "limits") setLimitsNow(Date.now());
+    if (nextMetric === "work") setWorkWindow(makeWorkSummaryWindow(windowDays));
     updatePreferences({ metric: nextMetric });
   };
   const refreshLimits = (automatic = false) =>
@@ -296,6 +327,16 @@ export function UsagePage() {
   const refreshWindow = () => {
     if (refreshingRef.current) return;
 
+    if (showingWork) {
+      // A new window mounts a fresh read; the same window needs an explicit re-read.
+      const next = makeWorkSummaryWindow(windowDays);
+      if (next.sinceTime === workWindow.sinceTime && next.untilTime === workWindow.untilTime) {
+        refreshWorkSummary(workWindow, workScope);
+      } else {
+        setWorkWindow(next);
+      }
+      return;
+    }
     if (showingLimits) {
       refreshingRef.current = true;
       setIsRefreshing(true);
@@ -369,7 +410,7 @@ export function UsagePage() {
             selectedEnvironments={selectedEnvironments}
             selectedEnvironmentIds={selectedEnvironmentIds}
             onSelectionChange={setSelectedEnvironmentIds}
-            showUsageStatus={!showingLimits}
+            showUsageStatus={!showingLimits && !showingWork}
             refreshing={refreshingUsage}
             isPartial={isPartial}
             duplicateSources={merged.duplicateSources}
@@ -379,10 +420,18 @@ export function UsagePage() {
         </WorkspaceBreadcrumbItem>
         <WorkspaceBreadcrumbSeparator />
         <WorkspaceBreadcrumbItem current className="min-w-10">
-          <UsageProviderFilter
-            hiddenProviders={hiddenProviders}
-            onChange={(next) => updatePreferences({ hiddenProviders: next })}
-          />
+          {showingWork ? (
+            <WorkProjectFilter
+              projects={workProjects}
+              selectedKeys={workProjectKeys}
+              onChange={setWorkProjectKeys}
+            />
+          ) : (
+            <UsageProviderFilter
+              hiddenProviders={hiddenProviders}
+              onChange={(next) => updatePreferences({ hiddenProviders: next })}
+            />
+          )}
         </WorkspaceBreadcrumbItem>
       </WorkspaceBreadcrumb>
       {!showingLimits ? (
@@ -428,8 +477,8 @@ export function UsagePage() {
         <Button
           onClick={refreshWindow}
           aria-label={showingLimits ? "Refresh limits" : "Refresh usage"}
-          aria-busy={isRefreshing}
-          disabled={isRefreshing || (!showingLimits && !canReadDiagnostics)}
+          aria-busy={isRefreshing || (showingWork && work.isReading)}
+          disabled={isRefreshing || (!showingLimits && !showingWork && !canReadDiagnostics)}
           size="icon-sm"
           variant="ghost"
         >
@@ -489,8 +538,8 @@ export function UsagePage() {
         <Button
           onClick={refreshWindow}
           aria-label={showingLimits ? "Refresh limits" : "Refresh usage"}
-          aria-busy={isRefreshing}
-          disabled={isRefreshing || (!showingLimits && !canReadDiagnostics)}
+          aria-busy={isRefreshing || (showingWork && work.isReading)}
+          disabled={isRefreshing || (!showingLimits && !showingWork && !canReadDiagnostics)}
           size="icon-sm"
           variant="ghost"
         >
@@ -513,9 +562,17 @@ export function UsagePage() {
             {selectedEnvironments.length === 0 ? (
               <p className="text-sm text-muted-foreground">
                 {environments.length === 0
-                  ? `Connect an environment to see ${showingLimits ? "limits" : "usage"}.`
-                  : `Select an environment to see ${showingLimits ? "limits" : "usage"}.`}
+                  ? `Connect an environment to see ${showingLimits ? "limits" : showingWork ? "work" : "usage"}.`
+                  : `Select an environment to see ${showingLimits ? "limits" : showingWork ? "work" : "usage"}.`}
               </p>
+            ) : showingWork ? (
+              <WorkSummaryView
+                totals={work.totals}
+                environments={work.environments}
+                isPending={work.isPending}
+                isReading={work.isReading}
+                hasEnvironments={work.environments.length > 0}
+              />
             ) : showingLimits ? (
               <UsageLimitsSection
                 selectedEnvironmentIds={selectedEnvironmentIds}
@@ -552,7 +609,7 @@ export function UsagePage() {
           </WorkspacePageContainer>
         </ScrollArea>
       </div>
-      {showingLimits ? null : (
+      {showingLimits || showingWork ? null : (
         <UsageModelDialogHost
           models={merged.models}
           environments={selectedEnvironments}
