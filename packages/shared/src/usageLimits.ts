@@ -18,6 +18,8 @@ import {
 
 import * as DateTime from "effect/DateTime";
 
+import { chooseUsageRoutedSelection } from "./usageRouting.ts";
+
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
 const DAY = 24 * HOUR;
@@ -62,6 +64,11 @@ export function exhaustedUsageWindow(
   }
 }
 
+/**
+ * With usage-aware routing on, a thread without an explicit choice starts on the account the
+ * routing policy picks from fresh readings; `routing` carries why. When no account has a
+ * verifiable reading, the default and its configured fallback apply as before.
+ */
 export function resolveNewThreadModelSelection(input: {
   readonly defaultSelection: ModelSelection | null;
   readonly explicitSelection?: ModelSelection | null;
@@ -70,10 +77,39 @@ export function resolveNewThreadModelSelection(input: {
   readonly now: number;
   readonly settings?: ServerSettings;
   readonly projectId?: ProjectId | null;
-}) {
+}): {
+  readonly selection: ModelSelection | null;
+  readonly fallback: {
+    readonly provider: ServerProvider;
+    readonly resetsAt: string | null;
+  } | null;
+  readonly routing?: { readonly reason: string };
+} {
   const selection = input.explicitSelection ?? input.defaultSelection;
   const unchanged = { selection, fallback: null };
-  if (input.explicitSelection || !selection || !input.fallbackSelection) return unchanged;
+  if (input.explicitSelection) return unchanged;
+  // Without a default, the caller is deferring to the user's last pick, which routing keeps.
+  if (input.settings?.usageAwareRouting && selection) {
+    const routed = chooseUsageRoutedSelection({
+      favorites: input.settings.favorites ?? [],
+      providers: input.providers,
+      base: selection,
+      now: input.now,
+      settings: input.settings,
+      projectId: input.projectId ?? null,
+    });
+    if (routed) {
+      const same =
+        routed.selection.instanceId === selection?.instanceId &&
+        routed.selection.model === selection.model;
+      return {
+        selection: same ? selection : routed.selection,
+        fallback: null,
+        routing: { reason: routed.reason },
+      };
+    }
+  }
+  if (!selection || !input.fallbackSelection) return unchanged;
   const provider = input.providers.find((entry) => entry.instanceId === selection.instanceId);
   const window = exhaustedUsageWindow(provider, input.now, selection.model);
   const fallback = input.providers.find(

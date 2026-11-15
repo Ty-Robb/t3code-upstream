@@ -2,6 +2,7 @@ import { ChildThreadApprovals } from "./chat/ChildThreadApprovals";
 import { workspaceAreaProps } from "../lib/workspaceFocus";
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
 import { resolveNewThreadModelSelection } from "@t3tools/shared/usageLimits";
+import { latestUsageLimitSwitch, providerAccountName } from "@t3tools/shared/usageRouting";
 import { queuedRunEditBlockedReason } from "@t3tools/client-runtime/queued-run-edit";
 import { ScrollToEndButton, WorkspaceFileDropOverlay } from "./chat/TimelineOverlays";
 import { usePasteToFocusComposer } from "./chat/usePasteToFocusComposer";
@@ -312,7 +313,7 @@ import { useProactivePanels } from "../hooks/useProactivePanels";
 import { useIncrementalTimelineEntries } from "../hooks/useIncrementalTimelineEntries";
 import { useRightPanelSurfaceClose } from "../hooks/useRightPanelSurfaceClose";
 import { ComposerBannerStack, type ComposerBannerStackItem } from "./chat/ComposerBannerStack";
-import { modelFallbackBannerItem } from "./chat/ComposerUsageLimits";
+import { modelFallbackBannerItem, usageRoutingBannerItem } from "./chat/ComposerUsageLimits";
 import { ComposerSurface } from "./chat/ComposerSurface";
 import { resolveThreadSyncPhase } from "../threadSync";
 import { hasAvailableCompactionProvider } from "./chat/compaction.logic";
@@ -779,7 +780,8 @@ export default function ChatView(props: ChatViewProps) {
         now: Date.parse(`${nowMinute}:00Z`),
       })
     : null;
-  const draftFallback = draftModelResolution?.fallback ? draftModelResolution : null;
+  const draftFallback =
+    draftModelResolution?.fallback || draftModelResolution?.routing ? draftModelResolution : null;
   const localDraftThread = draftThread
     ? buildLocalDraftThread(
         threadId,
@@ -2582,6 +2584,73 @@ export default function ChatView(props: ChatViewProps) {
             }),
           ]
         : [];
+    const selectionNames = (selection: ModelSelection) => {
+      const provider = providerStatuses.find((entry) => entry.instanceId === selection.instanceId);
+      return {
+        model:
+          provider?.models.find((model) => model.slug === selection.model)?.name ?? selection.model,
+        account: provider ? providerAccountName(provider) : selection.instanceId,
+      };
+    };
+    const composerShows = (selection: ModelSelection) =>
+      !composerSelectedModelSelection ||
+      (composerSelectedModelSelection.instanceId === selection.instanceId &&
+        composerSelectedModelSelection.model === selection.model);
+    const routedDraft =
+      !isServerThread &&
+      multipleModelSelections === null &&
+      !composerModelSelectionExplicit &&
+      draftFallback?.routing &&
+      fallbackSelection &&
+      defaultSelection &&
+      (defaultSelection.instanceId !== fallbackSelection.instanceId ||
+        defaultSelection.model !== fallbackSelection.model) &&
+      composerShows(fallbackSelection)
+        ? { reason: draftFallback.routing.reason, routed: fallbackSelection, defaultSelection }
+        : null;
+    const routedKey = routedDraft
+      ? `routing:${routedDraft.routed.instanceId}:${routedDraft.routed.model}`
+      : null;
+    const accountSwitch =
+      serverProjection === null ? null : latestUsageLimitSwitch(serverProjection.runs);
+    const switchKey =
+      accountSwitch && serverThread
+        ? `routing-switch:${serverThread.id}:${accountSwitch.to.instanceId}`
+        : null;
+    const routingItems: ComposerBannerStackItem[] = [
+      ...(routedDraft && routedKey !== dismissedFallbackWindow
+        ? [
+            usageRoutingBannerItem({
+              id: "usage-routing",
+              title: `Using ${selectionNames(routedDraft.routed).model} on ${selectionNames(routedDraft.routed).account}`,
+              description: routedDraft.reason,
+              actionLabel: `Use ${selectionNames(routedDraft.defaultSelection).model}`,
+              onAction: () =>
+                onProviderModelSelectStable(
+                  routedDraft.defaultSelection.instanceId,
+                  routedDraft.defaultSelection.model,
+                ),
+              onDismiss: () => setDismissedFallbackWindow(routedKey),
+            }),
+          ]
+        : []),
+      ...(accountSwitch && switchKey !== dismissedFallbackWindow && composerShows(accountSwitch.to)
+        ? [
+            usageRoutingBannerItem({
+              id: "usage-routing-switch",
+              title: `Moved to ${selectionNames(accountSwitch.to).account} after a usage limit`,
+              description: `${selectionNames(accountSwitch.from).account} reached its limit. The conversation carried over; tool state from the earlier session may not have.`,
+              actionLabel: `Switch back to ${selectionNames(accountSwitch.from).account}`,
+              onAction: () =>
+                onProviderModelSelectStable(
+                  accountSwitch.from.instanceId,
+                  accountSwitch.from.model,
+                ),
+              onDismiss: () => setDismissedFallbackWindow(switchKey),
+            }),
+          ]
+        : []),
+    ];
     const limitRecoveryItems = limitRecoveryBanner === null ? [] : [limitRecoveryBanner];
     const extensionStatusBanner = extensionStatusBannerItem(
       deriveProviderExtensionStatuses(serverProjection),
@@ -2598,6 +2667,7 @@ export default function ChatView(props: ChatViewProps) {
       return [
         ...feedbackBannerItems,
         ...fallbackItems,
+        ...routingItems,
         ...limitRecoveryItems,
         ...extensionStatusItems,
         ...usageLimitsItems,
@@ -2609,6 +2679,7 @@ export default function ChatView(props: ChatViewProps) {
     return [
       ...feedbackBannerItems,
       ...fallbackItems,
+      ...routingItems,
       ...limitRecoveryItems,
       ...extensionStatusItems,
       ...usageLimitsItems,

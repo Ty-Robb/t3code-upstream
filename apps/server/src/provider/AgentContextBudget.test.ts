@@ -45,6 +45,7 @@ import { buildCodexAdditionalContext } from "./CodexDeveloperInstructions.ts";
 import { DocumentText } from "./DocumentText.ts";
 import { ProviderRegistry } from "./ProviderRegistry.ts";
 import budget from "./agentContextBudget.json" with { type: "json" };
+import * as UsageRouting from "../usage/UsageRouting.ts";
 
 // Registration only stores tool definitions, so the handlers' services are never called.
 const toolHandlerServices = Layer.mergeAll(
@@ -109,6 +110,7 @@ const codexAdditionalContext = () =>
     .join("");
 
 const layerAdvertisedTools = McpHttpServer.layerTools.pipe(
+  Layer.provide(UsageRouting.layerTest),
   Layer.provideMerge(McpHttpServer.layerInProcessMcpServer),
   Layer.provide(toolHandlerServices),
 );

@@ -127,7 +127,7 @@ function sameProjectWorktreePolicies(left: ServerSettings, right: ServerSettings
 
 type LimitRecoverySettings = Pick<
   ServerSettings,
-  "autoResumeLimitedThreads" | "snoozeLimitedThreads"
+  "autoResumeLimitedThreads" | "snoozeLimitedThreads" | "usageAwareRouting"
 >;
 
 export function storageCleanupThreadIdle(
@@ -185,7 +185,12 @@ function heldForLimitRecovery(
     resetMs <= DateTime.toEpochMillis(thread.latestRunCompletedAt ?? thread.updatedAt)
   )
     return false;
-  return settings.autoResumeLimitedThreads || (settings.snoozeLimitedThreads && resetMs > now);
+  // Routing either moves the run to another account or schedules it for the reset.
+  return (
+    settings.autoResumeLimitedThreads ||
+    settings.usageAwareRouting ||
+    (settings.snoozeLimitedThreads && resetMs > now)
+  );
 }
 
 /** PR metadata refreshes must not reset the inactivity clock. */
@@ -1200,6 +1205,7 @@ const make = Effect.gen(function* () {
               currentSettings.autoResumeLimitedThreads !==
                 serverSettings.autoResumeLimitedThreads ||
               currentSettings.snoozeLimitedThreads !== serverSettings.snoozeLimitedThreads ||
+              currentSettings.usageAwareRouting !== serverSettings.usageAwareRouting ||
               Object.keys(settings).some(
                 (key) =>
                   current[key as keyof typeof settings] !== settings[key as keyof typeof settings],

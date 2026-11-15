@@ -1,5 +1,11 @@
 import { assert, describe, it } from "@effect/vitest";
-import { RunId, ThreadId, type OrchestrationV2DomainEvent } from "@t3tools/contracts";
+import {
+  ProviderInstanceId,
+  RunId,
+  ThreadId,
+  type OrchestrationV2Command,
+  type OrchestrationV2DomainEvent,
+} from "@t3tools/contracts";
 import * as Clock from "effect/Clock";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -10,11 +16,12 @@ import * as TestClock from "effect/testing/TestClock";
 
 import * as Scheduler from "../scheduling/Scheduler.ts";
 import * as ServerSettings from "../serverSettings.ts";
+import * as UsageRouting from "../usage/UsageRouting.ts";
 import * as Orchestrator from "./Orchestrator.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
 import * as ThreadManagement from "./ThreadManagementService.ts";
 import * as UsageLimitRecoveryWorker from "./UsageLimitRecoveryWorker.ts";
-import { limitRecoveryCommand } from "./UsageLimitRecoveryWorker.ts";
+import { limitFallbackEligible, limitRecoveryCommand } from "./UsageLimitRecoveryWorker.ts";
 
 it.effect("idle sweeps skip SQL until the next wake time or a relevant event", () =>
   Effect.gen(function* () {
@@ -39,6 +46,7 @@ it.effect("idle sweeps skip SQL until the next wake time or a relevant event", (
               ),
           }),
           Layer.mock(ThreadManagement.ThreadManagementService)({}),
+          Layer.mock(UsageRouting.UsageRouting)({}),
           Layer.mock(Orchestrator.OrchestratorV2)({
             streamDomainEvents: Stream.fromQueue(events),
           }),
@@ -115,4 +123,135 @@ describe("limitRecoveryCommand arming", () => {
     const thread = failedThread(30 * HOUR_MS, 24 * HOUR_MS + 1);
     assert.isNull(limitRecoveryCommand(thread, true, nowMs));
   });
+});
+
+describe("usage-aware fallback", () => {
+  // Stopped just now; the account reopens in two hours.
+  const limited = failedThread(0, -2 * HOUR_MS);
+
+  it.each([
+    ["a limited run", limited, true],
+    ["a short cooldown", failedThread(0, -10 * 60 * 1000), false],
+    [
+      "a run already armed for its reset",
+      {
+        ...limited,
+        limitRecovery: {
+          runId: limited.latestRunId!,
+          resetAt: limited.usageLimitResetAt!,
+          autoResume: true,
+        },
+      },
+      false,
+    ],
+    ["a snoozed thread", { ...limited, snoozedUntil: DateTime.makeUnsafe(nowMs + HOUR_MS) }, false],
+    ["a settled thread", { ...limited, settledOverride: "settled" as const }, false],
+  ] as const)("is eligible for %s: %s", (_name, thread, eligible) => {
+    assert.equal(limitFallbackEligible(thread, nowMs), eligible);
+  });
+
+  const fallback: UsageRouting.UsageLimitFallback = {
+    selection: { instanceId: ProviderInstanceId.make("claude-02"), model: "claude-opus-5-5" },
+    provider: undefined as never,
+    starred: true,
+    reason: "Starred Opus 5.5 on Claude 02: Weekly 25% left.",
+    from: undefined,
+    attempt: 0,
+  };
+
+  const sweepWith = (
+    choices: ReadonlyArray<UsageRouting.UsageLimitFallback | "in_flight" | null>,
+    thread = limited,
+  ) =>
+    Effect.gen(function* () {
+      const dispatched: Array<unknown> = [];
+      const armed: Array<unknown> = [];
+      let sweep: Effect.Effect<void> = Effect.void;
+      let choice = 0;
+      const layer = UsageLimitRecoveryWorker.layer.pipe(
+        Layer.provide(
+          Layer.mergeAll(
+            Layer.succeed(Scheduler.Scheduler, {
+              register: <E, R>(_name: string, work: Effect.Effect<void, E, R>) =>
+                Effect.gen(function* () {
+                  const context = yield* Effect.context<R>();
+                  sweep = work.pipe(Effect.provideContext(context), Effect.orDie);
+                }),
+            }),
+            Layer.mock(ProjectionStore.ProjectionStoreV2)({
+              getLimitRecoveryCandidates: () => Effect.succeed([thread]),
+              getLimitRecoveryWakeAt: () => Effect.succeed(null),
+            }),
+            Layer.mock(ThreadManagement.ThreadManagementService)({
+              dispatch: (command) =>
+                Effect.sync(() => {
+                  dispatched.push(command);
+                }) as never,
+            }),
+            Layer.mock(UsageRouting.UsageRouting)({
+              chooseFallback: () => Effect.succeed(choices[choice++] ?? null),
+            }),
+            Layer.mock(Orchestrator.OrchestratorV2)({
+              streamDomainEvents: Stream.never,
+              autoArmLimitRecovery: (input) =>
+                Effect.sync(() => {
+                  armed.push(input.limitRecovery);
+                }) as never,
+            }),
+            Layer.mock(ServerSettings.ServerSettingsService)({
+              getSettings: Effect.succeed({
+                autoResumeLimitedThreads: false,
+                snoozeLimitedThreads: false,
+                usageAwareRouting: true,
+              } as never),
+              streamChanges: Stream.never,
+            }),
+          ),
+        ),
+      );
+      yield* Effect.gen(function* () {
+        for (let tick = 0; tick < choices.length + 1; tick++) yield* sweep;
+      }).pipe(Effect.provide(layer));
+      return { dispatched, armed };
+    });
+
+  it.effect("dispatches one fallback per limited run, then waits for the reset", () =>
+    Effect.gen(function* () {
+      yield* TestClock.setTime(nowMs);
+      const { dispatched, armed } = yield* sweepWith([fallback]);
+      assert.lengthOf(dispatched, 1);
+      const command = dispatched[0] as OrchestrationV2Command;
+      assert(command.type === "message.dispatch");
+      assert.equal(command.usageLimitContinuationOfRunId, limited.latestRunId);
+      assert.deepEqual(command.modelSelection, fallback.selection);
+      assert.include(command.text, fallback.reason);
+      // The thread still reads as limited, as after a rejected switch: the next sweep arms it.
+      assert.deepEqual(armed, [
+        {
+          runId: limited.latestRunId,
+          resetAt: limited.usageLimitResetAt,
+          autoResume: true,
+          snooze: false,
+        },
+      ]);
+    }),
+  );
+
+  it.effect("resumes at the reset when no account has verified capacity", () =>
+    Effect.gen(function* () {
+      yield* TestClock.setTime(nowMs);
+      const { dispatched, armed } = yield* sweepWith([null]);
+      assert.lengthOf(dispatched, 0);
+      assert.equal(armed.length > 0, true);
+    }),
+  );
+
+  it.effect("leaves a continuation that is waiting to start alone", () =>
+    Effect.gen(function* () {
+      yield* TestClock.setTime(nowMs);
+      const { dispatched, armed } = yield* sweepWith(["in_flight", "in_flight"]);
+      assert.lengthOf(dispatched, 0);
+      assert.lengthOf(armed, 0);
+    }),
+  );
 });

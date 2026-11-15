@@ -101,6 +101,7 @@ export function AutoSettleSettingsRows(props: {
     patch: Partial<AutoSettleSettings> & {
       autoResumeLimitedThreads?: boolean;
       snoozeLimitedThreads?: boolean;
+      usageAwareRouting?: boolean;
     },
   ) => props.write(patch);
 
@@ -142,6 +143,14 @@ export function AutoSettleSettingsRows(props: {
             value={uniformMobileSetting(displayTargets, "snoozeLimitedThreads")}
             disabled={disabledFor("snoozeLimitedThreads")}
             onValueChange={(value) => writeToAll({ snoozeLimitedThreads: value })}
+          />
+          <SettingsSwitchRow
+            icon="arrow.triangle.branch"
+            label="Usage-aware routing"
+            subtitle="Start new threads on the starred model with the most verified usage left and move limited threads to another account. Unknown readings never count. Otherwise, resume at reset."
+            value={uniformMobileSetting(displayTargets, "usageAwareRouting")}
+            disabled={disabledFor("usageAwareRouting")}
+            onValueChange={(value) => writeToAll({ usageAwareRouting: value })}
           />
         </SettingsSection>
       ) : null}
