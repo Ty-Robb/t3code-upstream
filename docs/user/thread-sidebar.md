@@ -267,6 +267,38 @@ the snooze. Enable **Snooze until limits reset** in thread behavior settings to
 snooze limit stops by default. Providers without a reset time offer manual
 retry and the normal snooze choices.
 
+### Usage-aware routing
+
+Turn on **Usage-aware routing** in **Settings → Threads** to keep work moving
+across your provider accounts. It uses the usage readings shown in the model
+picker, each scoped to its exact account:
+
+- A new thread with no model you chose starts on the starred model with the
+  most session and weekly usage left. Without a starred model with a fresh
+  reading, it uses another account that has one and says why. **Use** in the
+  notice returns to your default. A model you pick yourself is never changed.
+- Agents that launch threads or delegate tasks without naming a model follow
+  the same rule, and there threads already running on an account count against
+  it. Scheduled tasks start on their saved model.
+- When a usage limit stops a thread and the reset is at least 15 minutes away,
+  the thread continues once on another account with a fresh reading that shows
+  capacity. Starred models come first. The thread records why it moved. The
+  conversation carries over as in [portable handoffs](./portable-handoffs.md);
+  tool and process state from the old session may not, so the agent is told to
+  check before repeating work. **Switch back** in the notice returns the next
+  message to the original account. If a restart cancels the move before the
+  turn starts, it tries again, or resumes on the original account at the
+  reset. A turn cut off after it started follows **Continue threads after
+  restarts**.
+- With no account left, or for a shorter cooldown, the thread resumes at the
+  reset.
+
+A missing, failed, unsupported, or out-of-date reading never counts as
+capacity, and a reading missing its session or weekly window ranks below a
+complete one. Routing does not reserve capacity, change effort beyond dropping
+fast mode, or switch on sign-in, network, or tool errors. Turn the setting off
+to keep every thread on the account it started with.
+
 On web and desktop, use **Agents** to follow work delegated to subagents.
 On mobile, open a subagent from its conversation card or **Agents**. On iOS
 layouts with an inspector, its thread opens beside the parent. Maximize it to

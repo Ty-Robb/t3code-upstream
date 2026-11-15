@@ -556,6 +556,11 @@ export interface ProjectionStoreV2Shape {
   readonly getLimitRecoveryWakeAt: (
     now: DateTime.Utc,
   ) => Effect.Effect<number | null, ProjectionStoreV2Error>;
+  /** Threads with a live run, per provider instance; usage routing weighs shared quota by them. */
+  readonly countLiveThreadsByProviderInstance: () => Effect.Effect<
+    ReadonlyMap<ProviderInstanceId, number>,
+    ProjectionStoreV2Error
+  >;
   readonly getSettlementCandidates: (
     threadId?: ThreadId,
   ) => Effect.Effect<ReadonlyArray<ProjectionSettlementCandidate>, ProjectionStoreV2Error>;
@@ -3376,6 +3381,14 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
             WHERE thread_id = ${threadId}
               AND (status IN ('queued','preparing','starting','running','waiting')
                 OR run_id IN (SELECT value FROM json_each(${cohortRunIds}))
+                -- A usage-limit continuation's source run names the account a client offers to
+                -- switch back to, even after its items leave the window.
+                OR run_id IN (
+                  SELECT json_extract(continuation.payload_json, '$.usageLimitContinuationOfRunId')
+                  FROM orchestration_v2_projection_runs AS continuation
+                  WHERE continuation.thread_id = ${threadId}
+                    AND continuation.run_id IN (SELECT value FROM json_each(${cohortRunIds}))
+                )
                 OR run_id = ${window.requiredRunId ?? null}
                 -- Queued or cancelled turns must not hide the latest actual session.
                 OR run_id = ${latestTodoList?.run_id ?? null}
@@ -4133,6 +4146,28 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
           (value): value is number => value != null,
         );
         return wakes.length === 0 ? null : Math.round(Math.min(...wakes));
+      },
+      Effect.mapError((cause) => new ProjectionStoreSetupError({ cause })),
+    );
+
+    const countLiveThreadsByProviderInstance = Effect.fn(
+      "ProjectionStore.countLiveThreadsByProviderInstance",
+    )(
+      function* () {
+        // Live as in isLiveRun; queued and waiting runs are not drawing on quota yet.
+        const rows = yield* sql<{ readonly instance_id: string; readonly count: number }>`
+          SELECT json_extract(r.payload_json, '$.providerInstanceId') AS instance_id,
+            COUNT(DISTINCT r.thread_id) AS count
+          FROM orchestration_v2_projection_runs r
+          INNER JOIN orchestration_v2_projection_threads t ON t.thread_id = r.thread_id
+          WHERE r.status IN ('preparing', 'starting', 'running') AND t.deleted_at IS NULL
+          GROUP BY instance_id
+        `;
+        return new Map(
+          rows.flatMap((row) =>
+            row.instance_id ? [[ProviderInstanceId.make(row.instance_id), row.count] as const] : [],
+          ),
+        );
       },
       Effect.mapError((cause) => new ProjectionStoreSetupError({ cause })),
     );
@@ -7539,6 +7574,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
       getProviderControlContext: readOnReader(getProviderControlContext),
       getLimitRecoveryCandidates: readOnReader(getLimitRecoveryCandidates),
       getLimitRecoveryWakeAt: readOnReader(getLimitRecoveryWakeAt),
+      countLiveThreadsByProviderInstance: readOnReader(countLiveThreadsByProviderInstance),
       getRecoveryThreadIds: readOnReader(getRecoveryThreadIds),
       getUnreadableThreadIds: readOnReader(getUnreadableThreadIds),
       getThreadSnapshot: readOnReader(getThreadSnapshot),

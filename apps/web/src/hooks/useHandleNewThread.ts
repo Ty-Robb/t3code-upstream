@@ -163,9 +163,10 @@ export function createNewThreadHandler(router: AnyRouter) {
       projectId: projectRef.projectId,
       now: Date.now(),
     });
-    const projectDefaultModelSelection = fallbackResolution.fallback
-      ? fallbackResolution.selection
-      : configuredDefaultModelSelection;
+    const projectDefaultModelSelection =
+      fallbackResolution.fallback || fallbackResolution.routing
+        ? fallbackResolution.selection
+        : configuredDefaultModelSelection;
     const defaultRuntimeMode = projectSettings.settings.defaultRuntimeMode;
     const resolveModelSelectionOverride = (destinationDraftId: DraftId) =>
       resolveNewThreadModelSelectionOverride({

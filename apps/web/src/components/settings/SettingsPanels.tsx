@@ -500,6 +500,9 @@ export function useSettingsRestore(onRestored?: () => void) {
     ...(settings.snoozeLimitedThreads !== DEFAULT_UNIFIED_SETTINGS.snoozeLimitedThreads
       ? ["Snooze until limits reset"]
       : []),
+    ...(settings.usageAwareRouting !== DEFAULT_UNIFIED_SETTINGS.usageAwareRouting
+      ? ["Usage-aware routing"]
+      : []),
     ...(!Equal.equals(settings.snoozePresets, DEFAULT_UNIFIED_SETTINGS.snoozePresets)
       ? ["Snooze options"]
       : []),
@@ -658,6 +661,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       sidebarAutoSettleOnMerge: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleOnMerge,
       autoResumeLimitedThreads: DEFAULT_UNIFIED_SETTINGS.autoResumeLimitedThreads,
       snoozeLimitedThreads: DEFAULT_UNIFIED_SETTINGS.snoozeLimitedThreads,
+      usageAwareRouting: DEFAULT_UNIFIED_SETTINGS.usageAwareRouting,
       snoozePresets: DEFAULT_UNIFIED_SETTINGS.snoozePresets,
       responseStreamingMode: DEFAULT_UNIFIED_SETTINGS.responseStreamingMode,
       enableProviderUpdateChecks: DEFAULT_UNIFIED_SETTINGS.enableProviderUpdateChecks,
@@ -1671,6 +1675,20 @@ export function ThreadsSettingsPanel() {
                 updateSettings({ snoozeLimitedThreads: Boolean(checked) })
               }
               aria-label="Snooze until limits reset"
+            />
+          }
+        />
+        <SettingsRow
+          serverScoped
+          {...searchableSetting("usage-aware-routing")}
+          description="Start new threads on the starred model with the most verified usage left and move limited threads to another account. Unknown readings never count. Otherwise, resume at reset."
+          settingKeys={["usageAwareRouting"]}
+          control={
+            <ScopedSwitch
+              settingKeys={["usageAwareRouting"]}
+              checked={settings.usageAwareRouting}
+              onCheckedChange={(checked) => updateSettings({ usageAwareRouting: Boolean(checked) })}
+              aria-label="Usage-aware routing"
             />
           }
         />

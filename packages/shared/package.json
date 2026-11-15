@@ -379,6 +379,10 @@
       "types": "./src/usageMerge.ts",
       "import": "./src/usageMerge.ts"
     },
+    "./workSummary": {
+      "types": "./src/workSummary.ts",
+      "import": "./src/workSummary.ts"
+    },
     "./usageFormat": {
       "types": "./src/usageFormat.ts",
       "import": "./src/usageFormat.ts"
@@ -386,6 +390,10 @@
     "./usageLimits": {
       "types": "./src/usageLimits.ts",
       "import": "./src/usageLimits.ts"
+    },
+    "./usageRouting": {
+      "types": "./src/usageRouting.ts",
+      "import": "./src/usageRouting.ts"
     },
     "./desktopAppControl": {
       "types": "./src/desktopAppControl.ts",
