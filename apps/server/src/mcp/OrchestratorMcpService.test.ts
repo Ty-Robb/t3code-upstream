@@ -3428,6 +3428,7 @@ describe("OrchestratorMcpService provider resolution", () => {
       saved: ScheduledTask = tasks[0]!,
     ) =>
       OrchestratorMcpService.layer.pipe(
+        Layer.provide(UsageRouting.layerTest),
         Layer.provide(Layer.mock(ThreadLaunchService.ThreadLaunchService)({})),
         Layer.provide(
           Layer.mock(GitVcsDriver.GitVcsDriver)({
