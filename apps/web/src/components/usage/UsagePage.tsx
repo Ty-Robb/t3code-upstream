@@ -90,6 +90,8 @@ import { UsagePriceOverrides } from "./UsagePriceOverrides";
 import { UsageProviderChart } from "./UsageProviderChart";
 import { SpeedPremium, UsageModelDialog } from "./UsageModelDialog";
 import { UsageShareBar } from "./UsageShareBar";
+import { workShareInputFromTotals } from "./workShareFromTotals";
+import { openWorkShareDialog } from "../workShare/workShareDialogState";
 import { WorkProjectFilter, WorkSummaryView } from "./WorkSummaryView";
 import {
   costTypeSegments,
@@ -592,6 +594,18 @@ export function UsagePage() {
                 isPending={work.isPending}
                 isReading={work.isReading}
                 hasEnvironments={work.environments.length > 0}
+                onShare={() =>
+                  openWorkShareDialog(
+                    workShareInputFromTotals(work.totals, {
+                      periodLabel: windowDays === 1 ? "Past 24 hours" : `Last ${windowDays} days`,
+                      projectLabel:
+                        workProjectKeys?.size === 1
+                          ? (workProjects.find((project) => workProjectKeys.has(project.key))
+                              ?.title ?? null)
+                          : null,
+                    }),
+                  )
+                }
               />
             ) : showingLimits ? (
               <UsageLimitsSection

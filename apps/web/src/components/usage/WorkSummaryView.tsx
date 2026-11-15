@@ -1,10 +1,10 @@
 import type { EnvironmentId, WorkSummaryTotals } from "@t3tools/contracts";
 import { formatCount } from "@t3tools/shared/usageFormat";
-import { ChevronDownIcon, InfoIcon } from "lucide-react";
+import { ChevronDownIcon, InfoIcon, Share2Icon } from "lucide-react";
 
 import { cn } from "../../lib/utils";
 import type { EnvironmentWorkStatus } from "../../state/workSummary";
-import { InlineButton } from "../ui/button";
+import { Button, InlineButton } from "../ui/button";
 import { Menu, MenuCheckboxItem, MenuPopup, MenuSeparator, MenuTrigger } from "../ui/menu";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { Skeleton } from "../ui/skeleton";
@@ -144,12 +144,14 @@ export function WorkSummaryView({
   isPending,
   isReading,
   hasEnvironments,
+  onShare,
 }: {
   readonly totals: WorkSummaryTotals;
   readonly environments: readonly EnvironmentWorkStatus[];
   readonly isPending: boolean;
   readonly isReading: boolean;
   readonly hasEnvironments: boolean;
+  readonly onShare: () => void;
 }) {
   if (!hasEnvironments) {
     return <p className="text-sm text-muted-foreground">Select an environment to see work.</p>;
@@ -180,7 +182,13 @@ export function WorkSummaryView({
       ) : null}
 
       <section aria-label="Pull requests" className="flex flex-col gap-4">
-        <h2 className="text-sm font-medium text-foreground">Pull requests</h2>
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="text-sm font-medium text-foreground">Pull requests</h2>
+          <Button variant="outline" size="xs" disabled={isReading} onClick={onShare}>
+            <Share2Icon aria-hidden />
+            Share
+          </Button>
+        </div>
         <div className="grid grid-cols-2 gap-x-6 gap-y-4 md:grid-cols-4">
           <Figure
             large
