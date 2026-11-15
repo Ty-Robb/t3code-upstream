@@ -69,20 +69,6 @@ export function dedupeWorkSummaryPullRequests(
   });
 }
 
-/** Whether a de-duplicated pull request bears on any total for the window. */
-export function isWorkSummaryPullRequestRelevant(
-  row: WorkSummaryPullRequest,
-  window: Window,
-): boolean {
-  return (
-    isWithinWindow(row.openedAt, window) ||
-    (row.state === "merged" &&
-      (row.mergedAt === null
-        ? isWithinWindow(row.linkedAt, window)
-        : isWithinWindow(row.mergedAt, window)))
-  );
-}
-
 /**
  * Combines each reporting environment's summary into the totals a dashboard or sharing card shows.
  * Pull requests de-duplicate across environments by canonical key, so one PR linked from a laptop

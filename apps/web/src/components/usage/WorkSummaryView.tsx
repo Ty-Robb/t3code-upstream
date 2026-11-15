@@ -213,7 +213,7 @@ export function WorkSummaryView({
             loading={isReading}
             label="Threads worked on"
             value={totals.threadsWithCompletedRuns}
-            definition="Distinct threads with at least one completed run in this period. Subagent threads count under the thread that launched them."
+            definition="Distinct threads with at least one completed run in this period. Subagent threads and side chats are not counted separately; their parent thread's runs are."
           />
           <Figure
             loading={isReading}

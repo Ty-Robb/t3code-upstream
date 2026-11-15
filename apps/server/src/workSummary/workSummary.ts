@@ -7,10 +7,7 @@ import {
   WorkSummaryReadError,
 } from "@t3tools/contracts";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
-import {
-  dedupeWorkSummaryPullRequests,
-  isWorkSummaryPullRequestRelevant,
-} from "@t3tools/shared/workSummary";
+import { dedupeWorkSummaryPullRequests } from "@t3tools/shared/workSummary";
 import * as Clock from "effect/Clock";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -42,9 +39,10 @@ interface LinkRow {
 }
 
 /**
- * Counts what this environment persisted for a window. Subagent threads, side chats and deleted
- * threads are skipped: their parent already carries the work, or their history is gone. Pull
- * requests link from many threads, so rows de-duplicate by canonical key before they leave.
+ * Counts what this environment persisted for a window. Runs and settled threads skip subagent
+ * threads, side chats and deleted threads: the parent already carries the work, or the history is
+ * gone. Pull requests are real wherever they were linked, so every live thread's links count and
+ * de-duplicate by canonical key before they leave.
  */
 export const readWorkSummary = Effect.fn("WorkSummary.read")(
   function* (input: WorkSummaryInput) {
@@ -104,8 +102,8 @@ export const readWorkSummary = Effect.fn("WorkSummary.read")(
         AND ${counted} ${scope}
     `.pipe(NodeSqliteClient.readOnly);
 
-    // Every link, not just those in the window: an old sync in another thread must not outvote
-    // a newer one, and a merge date in the window may sit on a link made long before.
+    // Every link, and every row is sent: the client de-duplicates across environments, so an
+    // environment cannot drop a row whose newer sync would outvote another environment's older one.
     const links = yield* sql<LinkRow>`
       SELECT json_extract(link.value, '$.host') AS host,
         json_extract(link.value, '$.repository') AS repository,
@@ -120,7 +118,7 @@ export const readWorkSummary = Effect.fn("WorkSummary.read")(
       FROM orchestration_v2_projection_threads AS t
       JOIN json_each(t.payload_json, '$.pullRequests') AS link
       WHERE json_extract(link.value, '$.source') != 'stack-dismissed'
-        AND ${counted} ${scope}
+        AND t.deleted_at IS NULL ${scope}
     `.pipe(NodeSqliteClient.readOnly);
 
     const rows: WorkSummaryPullRequest[] = links.map((link) => ({
@@ -136,15 +134,12 @@ export const readWorkSummary = Effect.fn("WorkSummary.read")(
       closedAt: link.closedAt ?? null,
       syncedAt: link.syncedAt ?? null,
     }));
-    const window = { sinceTime, untilTime };
     return {
       ...empty,
       runsCompleted: runs?.runs ?? 0,
       threadsWithCompletedRuns: runs?.threads ?? 0,
       threadsSettled: settled?.settled ?? 0,
-      pullRequests: dedupeWorkSummaryPullRequests(rows).filter((row) =>
-        isWorkSummaryPullRequestRelevant(row, window),
-      ),
+      pullRequests: dedupeWorkSummaryPullRequests(rows),
     } satisfies WorkSummary;
   },
   Effect.mapError((cause) =>

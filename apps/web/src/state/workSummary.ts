@@ -9,6 +9,7 @@ import {
 } from "@t3tools/contracts";
 import { resolveWorkSummaryAccess } from "@t3tools/client-runtime/state/work-summary-access";
 import { deriveWorkSummaryTotals } from "@t3tools/shared/workSummary";
+import * as Option from "effect/Option";
 import { AsyncResult, Atom } from "effect/reactivity";
 
 import { appAtomRegistry } from "../rpc/atomRegistry";
@@ -108,9 +109,10 @@ const workByWindowAtom = Atom.family((selectionKey: string) =>
         isPending: result.waiting,
         error:
           result._tag === "Failure"
-            ? "This environment could not report work. It may need an update."
+            ? "This environment could not report work. Its server may predate Work, or the read failed."
             : null,
-        summary: AsyncResult.getOrElse(result, () => null),
+        // A failed refresh keeps the previous figures, and the error note says they may be old.
+        summary: Option.getOrNull(AsyncResult.value(result)),
         input,
       });
     }

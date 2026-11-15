@@ -187,10 +187,20 @@ Claude quotas. Tap it to open **Usage → Limits**; on Android this works while 
 the background, otherwise open the app from the launcher. On iOS, use **Edit Widget** to choose
 Session, Weekly, or both for each provider. Reopen T3 to refresh expired readings.
 
+## Work
+
+**Usage → Work** counts what was finished in the selected period: runs completed, threads worked on,
+threads settled, pull requests merged, and pull requests T3 saw opened with where they stand now.
+It counts persisted run and pull request status, never assistant messages, and it says nothing about
+effort, time or money saved. Pull requests are counted once across threads and environments. Only
+pull requests T3 saw opened count as opened, because the host's creation time isn't stored. Notes on
+the page list environments that couldn't report and pull requests with missing or stale status.
+Work reads each connected environment's own data, so you need permission to read orchestration there.
+
 ## Keyboard shortcuts
 
 On web and desktop, open Usage from the command palette. While on Usage,
-press `C`, `T`, or `L` for Cost, Tokens, or Limits while not typing in a field.
+press `C`, `T`, `L`, or `W` for Cost, Tokens, Limits, or Work while not typing in a field.
 Use `Ctrl+Shift+1/2/3/4` (`Cmd+Shift+1/2/3/4` on macOS) for the past
 24 hours, 7 days, 30 days, or 90 days. Period shortcuts do nothing on Limits.
 Press `Escape` to return to the previous page. Customize these shortcuts in

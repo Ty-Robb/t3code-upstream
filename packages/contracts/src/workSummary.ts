@@ -13,7 +13,7 @@ import { PullRequestState } from "./pullRequest.ts";
 /** Bump for incompatible WorkSummary changes; skipped unknown array variants need no bump. */
 export const WORK_SUMMARY_CONTRACT_VERSION = 1 as const;
 
-/** Longest window one read covers; the scan reads every pull request link, so keep it bounded. */
+/** Longest window one read covers, which keeps the run and settled scans bounded. */
 export const WORK_SUMMARY_MAX_WINDOW_DAYS = 400 as const;
 
 /**
@@ -85,10 +85,7 @@ export const WorkSummary = Schema.Struct({
   threadsWithCompletedRuns: NonNegativeInt,
   /** Threads whose `settledAt` is in the window and that the user has not forced active. */
   threadsSettled: NonNegativeInt,
-  /**
-   * Pull requests opened in the window, merged in the window, or merged with no merge date and
-   * first linked in the window. Pull requests outside all three are not sent.
-   */
+  /** Every pull request linked from a live thread, one row each; the client picks those in its window. */
   pullRequests: ForwardCompatibleArray(WorkSummaryPullRequest),
 });
 export type WorkSummary = typeof WorkSummary.Type;

@@ -565,6 +565,10 @@ export function UsagePage() {
                   ? `Connect an environment to see ${showingLimits ? "limits" : showingWork ? "work" : "usage"}.`
                   : `Select an environment to see ${showingLimits ? "limits" : showingWork ? "work" : "usage"}.`}
               </p>
+            ) : showingWork && workScope.projectKeys?.size === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                No projects selected. Choose a project to see work.
+              </p>
             ) : showingWork ? (
               <WorkSummaryView
                 totals={work.totals}

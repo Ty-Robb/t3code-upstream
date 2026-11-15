@@ -206,7 +206,7 @@ it.effect(
     }).pipe(Effect.provide(SqlitePersistence.layerMemory)),
 );
 
-it.effect("sends only pull requests that bear on the window and never their titles", () =>
+it.effect("sends every non-dismissed pull request once and never their titles", () =>
   Effect.gen(function* () {
     yield* insertThread({
       id: "t",
@@ -239,11 +239,22 @@ it.effect("sends only pull requests that bear on the window and never their titl
         link({ number: 7, source: "stack-dismissed", linkedAt: "2026-10-09T00:00:00.000Z" }),
       ],
     });
+    // A pull request linked only from a subagent thread is still real work.
+    yield* insertThread({
+      id: "child",
+      lineage: { parentThreadId: "t", relationshipToParent: "subagent" },
+      links: [link({ number: 8, source: "created", linkedAt: "2026-10-09T00:00:00.000Z" })],
+    });
+    yield* insertThread({
+      id: "gone",
+      deleted: true,
+      links: [link({ number: 9, source: "created", linkedAt: "2026-10-09T00:00:00.000Z" })],
+    });
 
     const summary = yield* readWorkSummary(input);
     assert.deepStrictEqual(
       summary.pullRequests.map((row) => row.number).toSorted((a, b) => a - b),
-      [1, 3, 5],
+      [1, 2, 3, 4, 5, 6, 8],
     );
     assert.notInclude(JSON.stringify(summary), "Private title");
     assert.notInclude(JSON.stringify(summary), "private-branch");
