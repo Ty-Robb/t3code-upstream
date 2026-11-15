@@ -73,7 +73,7 @@ export interface WorkShareCard {
   readonly disclosed: ReadonlyArray<string>;
   /** Everything held back, for the privacy preview. */
   readonly withheld: ReadonlyArray<string>;
-  /** False for sample data or a summary with nothing to show. */
+  /** False for sample data or a summary whose counts are all absent or zero. */
   readonly canShare: boolean;
 }
 
@@ -82,10 +82,16 @@ const MAX_LABEL = 48;
 // A label that looks like a path, URL or email is never printed, even when the user opts in.
 const UNSAFE_LABEL = /[\\/~]|:\/\/|@|^[a-z]:/i;
 
-function cleanLabel(value: string | null | undefined): string | null {
+function cleanText(value: string | null | undefined): string | null {
   const text = value?.replace(/[\p{Cc}\s]+/gu, " ").trim();
-  if (!text || UNSAFE_LABEL.test(text)) return null;
+  if (!text) return null;
   return text.length > MAX_LABEL ? `${text.slice(0, MAX_LABEL - 1)}…` : text;
+}
+
+/** Project names get the path filter too; a period label like "11/01–11/07" must not. */
+function cleanProjectLabel(value: string | null | undefined): string | null {
+  const text = cleanText(value);
+  return text && !UNSAFE_LABEL.test(text) ? text : null;
 }
 
 function validCount(value: number | undefined): value is number {
@@ -168,17 +174,17 @@ export function buildWorkShareCard(
   input: WorkShareInput,
   options: WorkShareOptions = DEFAULT_WORK_SHARE_OPTIONS,
 ): WorkShareCard {
-  const periodLabel = cleanLabel(input.periodLabel) ?? "Recent work";
+  const periodLabel = cleanText(input.periodLabel) ?? "Recent work";
   const stats = buildStats(input.counts);
   const insights = buildInsights(input, options);
   const coverageNote = buildCoverageNote(input.coverage);
-  const safeProject = cleanLabel(input.projectLabel);
+  const safeProject = cleanProjectLabel(input.projectLabel);
   const includeProject = options.includeProject && safeProject !== null;
   const projectLabel = includeProject ? safeProject : null;
 
   const withheld = [
     "Prompts, messages and code",
-    "File paths and repository URLs",
+    "Your file paths and repository URLs",
     "Credentials and tokens",
   ];
   const disclosed = [
@@ -223,7 +229,7 @@ export function buildWorkShareCard(
     fileName: `t3-code-work-${slug(periodLabel) || "summary"}.png`,
     disclosed,
     withheld,
-    canShare: input.source === "dashboard" && stats.length > 0,
+    canShare: input.source === "dashboard" && stats.some((stat) => stat.value > 0),
   };
 }
 
@@ -233,8 +239,8 @@ export function buildXComposeUrl(text: string): string {
 }
 
 /**
- * The slice of the dashboard's `WorkSummaryTotals` (packages/contracts/src/workSummary.ts) a card
- * needs. Declared structurally so this package doesn't depend on that contract's release.
+ * The slice of the work summary dashboard's totals a card needs. Declared structurally so this
+ * module compiles before, and independently of, the dashboard's contract.
  */
 export interface WorkSummaryTotalsForShare {
   readonly coverage: {

@@ -52,6 +52,12 @@ describe("buildWorkShareCard", () => {
     expect(card.shareText).not.toContain(projectLabel);
   });
 
+  it("keeps a date-range period label that contains slashes", () => {
+    expect(buildWorkShareCard({ ...dashboard, periodLabel: "11/01–11/07" }).periodLabel).toBe(
+      "11/01–11/07",
+    );
+  });
+
   it("keeps opened and merged apart and does not invent absent or invalid counts", () => {
     const card = buildWorkShareCard({
       ...dashboard,
@@ -117,6 +123,10 @@ describe("buildWorkShareCard", () => {
   it("refuses to share sample data or an empty summary", () => {
     expect(buildWorkShareCard({ ...dashboard, source: "sample" }).canShare).toBe(false);
     expect(buildWorkShareCard({ ...dashboard, counts: {} }).canShare).toBe(false);
+    expect(
+      buildWorkShareCard({ ...dashboard, counts: { pullRequestsOpened: 0, pullRequestsMerged: 0 } })
+        .canShare,
+    ).toBe(false);
     expect(buildWorkShareCard(dashboard).canShare).toBe(true);
   });
 });
@@ -149,6 +159,17 @@ describe("workShareInputFromTotals", () => {
     expect(card.coverageNote).toBe("Based on 1 of 2 environments");
     expect(card.canShare).toBe(true);
     expect(card.projectLabel).toBeNull();
+  });
+
+  it("gives an unshareable card for a period with no activity", () => {
+    const empty = {
+      coverage: { environmentsReporting: 1, environmentsTotal: 1 },
+      threadsWithCompletedRuns: 0,
+      pullRequests: { opened: 0, merged: 0, openedOutcome: { merged: 0, unknown: 0 } },
+    };
+    const card = buildWorkShareCard(workShareInputFromTotals(empty, { periodLabel: "x" }));
+    expect(card.canShare).toBe(false);
+    expect(card.insights).toEqual([]);
   });
 
   it("withholds the merge rate while any opened PR was never read from the host", () => {

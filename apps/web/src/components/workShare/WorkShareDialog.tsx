@@ -86,11 +86,29 @@ export function WorkShareDialogBody({ input }: { readonly input: WorkShareInput 
   // Read once per open: the card follows the theme the user shared from.
   const [theme] = useState(readWorkShareTheme);
 
+  // Encoded as soon as the card changes, so share and download don't await encoding inside the
+  // click; Safari drops the user gesture across that wait.
+  const pngRef = useRef<Promise<Blob> | null>(null);
+
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- paints the card onto a canvas, an external imperative surface
   useEffect(() => {
     const ctx = canvasRef.current?.getContext("2d");
     if (ctx) drawWorkShareCard(ctx, card, theme);
+    const png = renderWorkShareCardPng(card, theme);
+    // Failures surface when an action awaits it.
+    png.catch(() => undefined);
+    pngRef.current = png;
   }, [card, theme]);
+  const cardPng = () => pngRef.current ?? renderWorkShareCardPng(card, theme);
+  const setSupportDismissedPersisted = (dismissed: boolean) => {
+    try {
+      if (dismissed) localStorage.setItem(SUPPORT_DISMISSED_KEY, "1");
+      else localStorage.removeItem(SUPPORT_DISMISSED_KEY);
+    } catch {
+      // Dismissal is session-only when storage is unavailable.
+    }
+    setSupportDismissed(dismissed);
+  };
 
   const run = (title: string, action: () => Promise<void>) => {
     void action().catch((error: unknown) => notifyFailure(title, error));
@@ -113,12 +131,13 @@ export function WorkShareDialogBody({ input }: { readonly input: WorkShareInput 
           ref={canvasRef}
           width={WORK_SHARE_CARD_WIDTH}
           height={WORK_SHARE_CARD_HEIGHT}
+          role="img"
           aria-label="Work card preview"
           className="mx-auto rounded-lg border"
           // The bitmap is 1200px wide; sizing it inline keeps the preview small even before CSS loads.
           style={{ width: "100%", maxWidth: "28rem", height: "auto" }}
         />
-        {input.source === "dashboard" && card.stats.length === 0 ? (
+        {input.source === "dashboard" && !card.canShare ? (
           <Alert>
             <AlertDescription>
               Nothing to share yet. Only pull requests that T3 Code tracked in this period count,
@@ -164,7 +183,8 @@ export function WorkShareDialogBody({ input }: { readonly input: WorkShareInput 
               Include the project name
             </Label>
           ) : null}
-          {input.insights?.tokensPerMergedPullRequest !== undefined ? (
+          {input.insights?.tokensPerMergedPullRequest !== undefined &&
+          (input.counts.pullRequestsMerged ?? 0) > 0 ? (
             <Label>
               <Checkbox
                 checked={options.includeTokens}
@@ -176,7 +196,17 @@ export function WorkShareDialogBody({ input }: { readonly input: WorkShareInput 
             </Label>
           ) : null}
         </div>
-        {supportDismissed ? null : (
+        {supportDismissed ? (
+          <div>
+            <Button
+              size="compact"
+              variant="ghost-muted"
+              onClick={() => setSupportDismissedPersisted(false)}
+            >
+              Show repository link option
+            </Button>
+          </div>
+        ) : (
           <div className="flex items-start justify-between gap-3 rounded-lg border p-3 text-sm">
             <Label>
               <Checkbox
@@ -195,13 +225,8 @@ export function WorkShareDialogBody({ input }: { readonly input: WorkShareInput 
               size="compact"
               variant="ghost-muted"
               onClick={() => {
-                try {
-                  localStorage.setItem(SUPPORT_DISMISSED_KEY, "1");
-                } catch {
-                  // Dismissal is session-only when storage is unavailable.
-                }
                 setOptions((current) => ({ ...current, includeSupportLink: false }));
-                setSupportDismissed(true);
+                setSupportDismissedPersisted(true);
               }}
             >
               Dismiss
@@ -225,9 +250,10 @@ export function WorkShareDialogBody({ input }: { readonly input: WorkShareInput 
         {canCopyImage() ? (
           <Button
             variant="outline"
+            disabled={!card.canShare}
             onClick={() =>
               run("Couldn't copy the image", async () => {
-                await copyWorkCardImage(await renderWorkShareCardPng(card, theme));
+                await copyWorkCardImage(cardPng());
                 notice("Image copied");
               })
             }
@@ -237,9 +263,11 @@ export function WorkShareDialogBody({ input }: { readonly input: WorkShareInput 
         ) : null}
         <Button
           variant="outline"
+          // Sample cards stay downloadable as a layout check; the image is marked SAMPLE DATA.
+          disabled={!card.canShare && card.source !== "sample"}
           onClick={() =>
             run("Couldn't create the image", async () => {
-              downloadWorkCardImage(card, await renderWorkShareCardPng(card, theme));
+              downloadWorkCardImage(card, await cardPng());
             })
           }
         >
@@ -251,11 +279,7 @@ export function WorkShareDialogBody({ input }: { readonly input: WorkShareInput 
             disabled={!card.canShare}
             onClick={() =>
               run("Couldn't open the share sheet", async () => {
-                await shareWorkCardWithSystem(
-                  card,
-                  await renderWorkShareCardPng(card, theme),
-                  navigator,
-                );
+                await shareWorkCardWithSystem(card, await cardPng(), navigator);
               })
             }
           >

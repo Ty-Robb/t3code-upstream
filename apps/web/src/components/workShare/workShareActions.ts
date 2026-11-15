@@ -43,7 +43,8 @@ export function canCopyImage(): boolean {
   return typeof ClipboardItem !== "undefined" && !!navigator.clipboard?.write;
 }
 
-export async function copyWorkCardImage(png: Blob): Promise<void> {
+/** Takes the PNG as a promise so the clipboard write starts inside the click, as Safari requires. */
+export async function copyWorkCardImage(png: Promise<Blob>): Promise<void> {
   await navigator.clipboard.write([new ClipboardItem({ "image/png": png })]);
 }
 

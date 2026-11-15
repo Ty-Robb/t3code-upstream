@@ -75,6 +75,7 @@ import {
   PinOffIcon,
   SquarePenIcon,
   TextSearchIcon,
+  Share2Icon,
   UserPlusIcon,
 } from "lucide-react";
 import { openThreadFind } from "./chat/threadFindStore";
@@ -1517,7 +1518,7 @@ function OpenCommandPaletteDialog(props: {
       value: "action:preview-work-share-card",
       searchTerms: ["share", "work card", "accomplishments", "x", "twitter", "png"],
       title: "Preview work share card (sample data)",
-      icon: <UserPlusIcon className={ITEM_ICON_CLASS} />,
+      icon: <Share2Icon className={ITEM_ICON_CLASS} />,
       run: async () => {
         openWorkShareDialog(SAMPLE_WORK_SHARE_INPUT);
       },

@@ -16,6 +16,15 @@ import { WorkShareDialogBody } from "./WorkShareDialog";
 const openExternal = vi.hoisted(() => vi.fn(async (_url: string) => {}));
 vi.mock("~/localApi", () => ({ ensureLocalApi: () => ({ shell: { openExternal } }) }));
 
+const SUPPORT_DISMISSED_KEY = "t3code:work-share:support-dismissed";
+
+/** Resets shared mock state and clears the persisted dismissal when the test ends, pass or fail. */
+function setup(): Disposable {
+  openExternal.mockClear();
+  localStorage.removeItem(SUPPORT_DISMISSED_KEY);
+  return { [Symbol.dispose]: () => localStorage.removeItem(SUPPORT_DISMISSED_KEY) };
+}
+
 const input: WorkShareInput = {
   source: "dashboard",
   periodLabel: "Last 7 days",
@@ -80,6 +89,7 @@ const domClick = (name: string, role: "button" | "checkbox" = "button") =>
   (page.getByRole(role, { name }).element() as HTMLElement).click();
 
 it("posts privacy-safe text to the X composer only after the user clicks, with opt-ins applied", async () => {
+  using _setup = setup();
   await using _screen = await renderDialog(input);
   await expect.element(page.getByText("Project name", { exact: true })).toBeVisible();
   await expect.element(page.getByText("Prompts, messages and code")).toBeVisible();
@@ -108,23 +118,29 @@ it("posts privacy-safe text to the X composer only after the user clicks, with o
   );
 });
 
-it("can dismiss the support call-to-action and disables sharing for sample data", async () => {
+it("dismisses and restores the support link, and blocks sharing sample data", async () => {
+  using _setup = setup();
   await using _screen = await renderDialog({ ...input, source: "sample" });
   await expect.element(page.getByRole("button", { name: "Post on X…" })).toBeDisabled();
   await expect.element(page.getByRole("button", { name: "Copy text" })).toBeDisabled();
   await expect.element(page.getByRole("button", { name: "Download PNG" })).toBeEnabled();
   domClick("Dismiss");
   await expect.element(page.getByText(/star it/)).not.toBeInTheDocument();
-  localStorage.removeItem("t3code:work-share:support-dismissed");
+  expect(localStorage.getItem(SUPPORT_DISMISSED_KEY)).toBe("1");
+  domClick("Show repository link option");
+  await expect.element(page.getByText(/star it/)).toBeVisible();
+  expect(localStorage.getItem(SUPPORT_DISMISSED_KEY)).toBeNull();
 });
 
-it("explains an empty T3-tracked summary instead of offering a card of nothing", async () => {
+it("explains an empty T3-tracked summary instead of offering a card of zeros", async () => {
+  using _setup = setup();
   await using _screen = await renderDialog({
     source: "dashboard",
     periodLabel: "Last 7 days",
     projectLabel: null,
-    counts: {},
+    counts: { pullRequestsOpened: 0, pullRequestsMerged: 0, threadsWorkedOn: 0 },
   });
   await expect.element(page.getByText(/Nothing to share yet/)).toBeVisible();
   await expect.element(page.getByRole("button", { name: "Post on X…" })).toBeDisabled();
+  await expect.element(page.getByRole("button", { name: "Download PNG" })).toBeDisabled();
 });

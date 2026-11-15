@@ -9,6 +9,7 @@ export const WORK_SHARE_CARD_HEIGHT = 630;
 /** The app's own look, so the card matches the dashboard in the user's current theme. */
 export interface WorkShareTheme {
   readonly brandName: string;
+  readonly fontFamily: string;
   readonly background: string;
   readonly surface: string;
   readonly border: string;
@@ -20,6 +21,7 @@ export interface WorkShareTheme {
 // Light-theme tokens from index.css, used when a token can't be resolved (tests, SSR).
 export const FALLBACK_WORK_SHARE_THEME: WorkShareTheme = {
   brandName: "T3 Code",
+  fontFamily: 'system-ui, -apple-system, "Segoe UI", sans-serif',
   background: "#fcfcfd",
   surface: "#ffffff",
   border: "#e4e4e7",
@@ -28,7 +30,9 @@ export const FALLBACK_WORK_SHARE_THEME: WorkShareTheme = {
   accent: "#2f3fd9",
 };
 
-const TOKENS: ReadonlyArray<readonly [Exclude<keyof WorkShareTheme, "brandName">, string]> = [
+const TOKENS: ReadonlyArray<
+  readonly [Exclude<keyof WorkShareTheme, "brandName" | "fontFamily">, string]
+> = [
   ["background", "--background"],
   ["surface", "--card"],
   ["border", "--border"],
@@ -47,7 +51,13 @@ export function readWorkShareTheme(): WorkShareTheme {
   probe.style.display = "none";
   document.body.append(probe);
   try {
-    const resolved = { ...FALLBACK_WORK_SHARE_THEME, brandName: APP_BASE_NAME };
+    const fontFamily = getComputedStyle(document.documentElement).getPropertyValue("--font-sans");
+    const resolved = {
+      ...FALLBACK_WORK_SHARE_THEME,
+      brandName: APP_BASE_NAME,
+      // Follows the Appearance font override, like the rest of the interface.
+      fontFamily: fontFamily.trim() || FALLBACK_WORK_SHARE_THEME.fontFamily,
+    };
     for (const [key, token] of TOKENS) {
       probe.style.color = `var(${token})`;
       const value = getComputedStyle(probe).color;
@@ -62,8 +72,6 @@ export function readWorkShareTheme(): WorkShareTheme {
     probe.remove();
   }
 }
-
-const FONT = '"DM Sans", system-ui, -apple-system, "Segoe UI", sans-serif';
 
 // The T3 mark from assets/prod/logo.svg, on a 128-unit grid.
 const LOGO_TILE = new Path2D(
@@ -81,6 +89,7 @@ export function drawWorkShareCard(
 ): void {
   const w = WORK_SHARE_CARD_WIDTH;
   const h = WORK_SHARE_CARD_HEIGHT;
+  const font = theme.fontFamily;
 
   ctx.fillStyle = theme.background;
   ctx.fillRect(0, 0, w, h);
@@ -99,13 +108,13 @@ export function drawWorkShareCard(
 
   ctx.textBaseline = "alphabetic";
   ctx.fillStyle = theme.foreground;
-  ctx.font = `700 36px ${FONT}`;
+  ctx.font = `700 36px ${font}`;
   ctx.fillText(theme.brandName, 152, 110);
 
   ctx.fillStyle = theme.muted;
-  ctx.font = `500 30px ${FONT}`;
+  ctx.font = `500 30px ${font}`;
   const scope = card.projectLabel ? `${card.periodLabel} · ${card.projectLabel}` : card.periodLabel;
-  ctx.fillText(scope, 72, 190);
+  ctx.fillText(scope, 72, 190, w - 144);
 
   const count = Math.max(card.stats.length, 1);
   const gap = 32;
@@ -120,29 +129,29 @@ export function drawWorkShareCard(
     ctx.lineWidth = 2;
     ctx.stroke();
     ctx.fillStyle = theme.foreground;
-    ctx.font = `700 ${tileWidth > 300 ? 112 : 88}px ${FONT}`;
+    ctx.font = `700 ${tileWidth > 300 ? 112 : 88}px ${font}`;
     ctx.fillText(String(stat.value), x + 36, 366, tileWidth - 72);
     ctx.fillStyle = theme.muted;
-    ctx.font = `500 30px ${FONT}`;
+    ctx.font = `500 30px ${font}`;
     ctx.fillText(stat.label, x + 36, 422, tileWidth - 72);
   });
 
   if (card.insights.length > 0) {
     ctx.fillStyle = theme.foreground;
-    ctx.font = `600 30px ${FONT}`;
+    ctx.font = `600 30px ${font}`;
     ctx.fillText(card.insights.join("   ·   "), 72, 514, w - 144);
   }
 
   if (card.coverageNote) {
     ctx.fillStyle = theme.muted;
-    ctx.font = `500 26px ${FONT}`;
+    ctx.font = `500 26px ${font}`;
     ctx.textAlign = "right";
     ctx.fillText(card.coverageNote, w - 72, h - 56);
     ctx.textAlign = "left";
   }
 
   ctx.fillStyle = card.source === "sample" ? theme.accent : theme.muted;
-  ctx.font = `500 26px ${FONT}`;
+  ctx.font = `500 26px ${font}`;
   ctx.fillText(
     card.source === "sample" ? "SAMPLE DATA: not real activity" : `Made with ${theme.brandName}`,
     72,
