@@ -1,6 +1,10 @@
 import { PullRequestProviderError } from "@t3tools/source-control-core/server/PullRequestProvider";
 import { SourceControlProviderKind } from "@t3tools/contracts";
-import { limitRecoveryCommand } from "./UsageLimitRecoveryWorker.ts";
+import {
+  limitFallbackCommand,
+  limitFallbackEligible,
+  limitRecoveryCommand,
+} from "./UsageLimitRecoveryWorker.ts";
 import { createOrchestrationV2TurnItemVisibility } from "@t3tools/shared/orchestrationV2Timeline";
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
 import * as SourceControlProviderRegistry from "../sourceControl/SourceControlProviderRegistry.ts";
@@ -8147,6 +8151,207 @@ it.layer(layerTest)("usage-limit recovery", (it) => {
           yield* orchestrator.dispatch(scheduledResume);
         }
         assert.lengthOf((yield* orchestrator.getThreadProjection(threadId)).runs, 3);
+      }),
+  );
+
+  it.effect.each([
+    "switch",
+    "reset-passed",
+    "manual-switch",
+    "restart-cancelled-retry",
+    "restart-cancelled-resume",
+  ] as const)(
+    "moves a usage-limited run to another account only while it is still limited: %s",
+    (scenario) =>
+      Effect.gen(function* () {
+        const orchestrator = yield* Orchestrator.OrchestratorV2;
+        const events = yield* EventSink.EventSinkV2;
+        const threadId = ThreadId.make(`fallback:${scenario}`);
+        const projectId = ProjectId.make(`fallback:project:${scenario}`);
+        yield* seedProject({
+          projectId,
+          title: "Fallback project",
+          workspaceRoot: process.cwd(),
+          defaultModelSelection: modelSelection,
+          createdAt: DateTime.formatIso(yield* DateTime.now),
+        });
+        yield* orchestrator.dispatch({
+          type: "thread.create",
+          commandId: CommandId.make(`fallback:create:${scenario}`),
+          threadId,
+          projectId,
+          title: "Limited thread",
+          modelSelection,
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          branch: null,
+          worktreePath: null,
+          createdBy: "user",
+          creationSource: "web",
+        });
+        yield* orchestrator.dispatch({
+          type: "message.dispatch",
+          commandId: CommandId.make(`fallback:message:${scenario}`),
+          threadId,
+          messageId: MessageId.make(`fallback:message:${scenario}`),
+          text: "Work on this.",
+          attachments: [],
+          dispatchMode: { type: "defer_start" },
+          createdBy: "user",
+          creationSource: "web",
+        });
+        const run = (yield* orchestrator.getThreadProjection(threadId)).runs[0]!;
+        const now = yield* DateTime.now;
+        const resetAt = DateTime.formatIso(DateTime.add(now, { hours: 2 }));
+        yield* events.write({
+          commandId: CommandId.make(`fallback:failure:${scenario}`),
+          events: [
+            {
+              id: EventId.make(`fallback:run:${scenario}`),
+              type: "run.updated",
+              threadId,
+              occurredAt: now,
+              payload: { ...run, status: "failed", completedAt: now },
+            },
+            {
+              id: EventId.make(`fallback:error:${scenario}`),
+              type: "turn-item.updated",
+              threadId,
+              occurredAt: now,
+              payload: {
+                id: TurnItemId.make(`fallback:error:${scenario}`),
+                type: "error",
+                threadId,
+                runId: run.id,
+                nodeId: run.rootNodeId,
+                providerThreadId: null,
+                providerTurnId: null,
+                nativeItemRef: null,
+                parentItemId: null,
+                ordinal: 2,
+                status: "failed",
+                title: "Usage limit reached",
+                startedAt: now,
+                completedAt: now,
+                updatedAt: now,
+                failure: {
+                  class: "usage_limit",
+                  message: "Plan limit reached.",
+                  code: "usageLimitExceeded",
+                  retryable: null,
+                  resetAt,
+                },
+              },
+            },
+          ],
+        });
+        const shell = (yield* orchestrator.getShellSnapshot()).threads.find(
+          (thread) => thread.id === threadId,
+        )!;
+        assert.isTrue(limitFallbackEligible(shell, DateTime.toEpochMillis(now)));
+        const fallback = limitFallbackCommand(shell, {
+          selection: { instanceId: alternateInstanceId, model: modelSelection.model },
+          provider: undefined as never,
+          starred: true,
+          reason: "Starred GPT on Alternate: Weekly 40% left.",
+          from: undefined,
+          attempt: 0,
+        });
+        assert(fallback?.type === "message.dispatch");
+        if (scenario === "manual-switch") {
+          yield* orchestrator.dispatch({
+            type: "provider.switch",
+            commandId: CommandId.make("fallback:manual-switch"),
+            threadId,
+            modelSelection: { instanceId: alternateInstanceId, model: "gpt-5.5" },
+          });
+        }
+        if (scenario === "reset-passed") yield* TestClock.adjust("3 hours");
+        const result = yield* orchestrator.dispatch(fallback).pipe(Effect.exit);
+        const after = yield* orchestrator.getThreadProjection(threadId);
+        if (scenario === "reset-passed" || scenario === "manual-switch") {
+          assert.equal(result._tag, "Failure");
+          assert.lengthOf(after.runs, 1);
+          return;
+        }
+        assert.equal(result._tag, "Success");
+        assert.lengthOf(after.runs, 2);
+        assert.equal(after.runs[1]!.providerInstanceId, alternateInstanceId);
+        assert.equal(after.runs[1]!.usageLimitContinuationOfRunId, run.id);
+        assert.equal(after.thread.providerInstanceId, alternateInstanceId);
+        // Redelivering the same command, as a second sweep would, starts nothing new.
+        yield* orchestrator.dispatch(fallback);
+        assert.lengthOf((yield* orchestrator.getThreadProjection(threadId)).runs, 2);
+        if (scenario === "switch") return;
+        // Restart recovery cancels a continuation its provider never accepted. The thread
+        // still reads as switched, but it belongs to the limited run's account again.
+        const unsent = after.runs[1]!;
+        const cancelledAt = yield* DateTime.now;
+        yield* events.write({
+          commandId: CommandId.make(`fallback:restart:${scenario}`),
+          events: [
+            {
+              id: EventId.make(`fallback:cancel:${scenario}`),
+              type: "run.updated",
+              threadId,
+              runId: unsent.id,
+              occurredAt: cancelledAt,
+              payload: {
+                ...unsent,
+                status: "cancelled",
+                startedAt: null,
+                completedAt: cancelledAt,
+              },
+            },
+          ],
+        });
+        const restarted = (yield* orchestrator.getShellSnapshot()).threads.find(
+          (thread) => thread.id === threadId,
+        )!;
+        if (scenario === "restart-cancelled-retry") {
+          const retry = limitFallbackCommand(restarted, {
+            selection: { instanceId: alternateInstanceId, model: modelSelection.model },
+            provider: undefined as never,
+            starred: true,
+            reason: "Starred GPT on Alternate: Weekly 40% left.",
+            from: undefined,
+            attempt: 1,
+          });
+          assert(retry?.type === "message.dispatch");
+          assert.notEqual(retry.commandId, fallback.commandId);
+          yield* orchestrator.dispatch(retry);
+          const retried = yield* orchestrator.getThreadProjection(threadId);
+          assert.lengthOf(retried.runs, 3);
+          assert.equal(retried.runs[2]!.providerInstanceId, alternateInstanceId);
+          return;
+        }
+        // No account qualified on the retry: the reset resume returns to the limited account.
+        yield* TestClock.adjust("3 hours");
+        const arm = limitRecoveryCommand(
+          restarted,
+          true,
+          DateTime.toEpochMillis(yield* DateTime.now),
+        );
+        assert(arm?.type === "thread.metadata.update" && arm.limitRecovery != null);
+        yield* orchestrator.autoArmLimitRecovery({
+          commandId: arm.commandId,
+          threadId,
+          limitRecovery: arm.limitRecovery,
+        });
+        const armed = (yield* orchestrator.getShellSnapshot()).threads.find(
+          (thread) => thread.id === threadId,
+        )!;
+        const resume = limitRecoveryCommand(
+          armed,
+          true,
+          DateTime.toEpochMillis(yield* DateTime.now),
+        );
+        assert(resume?.type === "message.dispatch");
+        yield* orchestrator.dispatch(resume);
+        const resumed = yield* orchestrator.getThreadProjection(threadId);
+        assert.lengthOf(resumed.runs, 3);
+        assert.equal(resumed.runs[2]!.providerInstanceId, modelSelection.instanceId);
+        assert.equal(resumed.thread.providerInstanceId, modelSelection.instanceId);
       }),
   );
 

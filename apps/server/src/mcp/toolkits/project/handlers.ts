@@ -25,6 +25,7 @@ import * as ServerSettings from "../../../serverSettings.ts";
 import * as ProviderRegistry from "../../../provider/ProviderRegistry.ts";
 import * as DateTime from "effect/DateTime";
 import { resolveNewThreadModelSelection } from "@t3tools/shared/usageLimits";
+import * as UsageRouting from "../../../usage/UsageRouting.ts";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import { resolveRuntimeMode } from "../../delegatedTaskModes.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
@@ -187,9 +188,7 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
                 ),
               )
             : undefined;
-        const modelSelection =
-          input.modelSelection ??
-          launchedModel ??
+        const inheritedSelection =
           caller?.modelSelection ??
           (projectDefaults
             ? resolveNewThreadModelSelection({
@@ -203,6 +202,41 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
                 now: DateTime.toEpochMillis(yield* DateTime.now),
               }).selection
             : null) ??
+          null;
+        // Without an explicit model, usage-aware routing may start the thread on another account.
+        // Only accounts that offer the mode this launch will ask for, so routing never fails or
+        // downgrades a launch that would succeed unrouted.
+        const wantedMode = input.runtimeMode ?? projectDefaults?.defaultRuntimeMode ?? runtimeMode;
+        const routed =
+          input.modelSelection === undefined && !replaying
+            ? yield* UsageRouting.UsageRouting.pipe(
+                Effect.flatMap((routing) =>
+                  ProviderRegistry.ProviderRegistry.pipe(
+                    Effect.flatMap((registry) => registry.getProviders),
+                    Effect.flatMap((providers) =>
+                      routing.chooseForLaunch({
+                        projectId,
+                        base: inheritedSelection,
+                        allowedInstanceIds: new Set(
+                          providers
+                            .filter(
+                              (provider) =>
+                                provider.supportedRuntimeModes === undefined ||
+                                provider.supportedRuntimeModes.includes(wantedMode),
+                            )
+                            .map((provider) => provider.instanceId),
+                        ),
+                      }),
+                    ),
+                  ),
+                ),
+              )
+            : null;
+        const modelSelection =
+          input.modelSelection ??
+          launchedModel ??
+          routed?.selection ??
+          inheritedSelection ??
           undefined;
         if (modelSelection === undefined)
           return yield* new OrchestratorMcpFailure({

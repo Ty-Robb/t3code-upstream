@@ -234,9 +234,10 @@ export function DraftHeroHeadline({
         projectId: project.id,
         now: Date.now(),
       });
-      const defaultModelSelection = fallbackResolution.fallback
-        ? fallbackResolution.selection
-        : defaultSelection;
+      const defaultModelSelection =
+        fallbackResolution.fallback || fallbackResolution.routing
+          ? fallbackResolution.selection
+          : defaultSelection;
       if (defaultModelSelection) {
         setModelSelection(draftId, defaultModelSelection, {
           replaceOptions: true,

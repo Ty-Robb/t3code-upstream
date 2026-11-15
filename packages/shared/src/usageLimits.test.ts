@@ -96,6 +96,51 @@ describe("new thread model fallback", () => {
       expected,
     );
   });
+  it("routes by fresh usage when enabled, and keeps explicit choices and the default otherwise", () => {
+    const freshFallback = {
+      ...available,
+      models: [{ slug: fallback.model, name: "Fable 5.1", isCustom: false, capabilities: null }],
+      usageLimits: {
+        checkedAt: "2026-09-03T11:59:00.000Z",
+        windows: [{ ...window, usedPercent: 30 }],
+      },
+    };
+    const routed = {
+      ...defaults,
+      fallbackSelection: null,
+      providers: [limited, freshFallback],
+      settings: {
+        ...DEFAULT_SERVER_SETTINGS,
+        usageAwareRouting: true,
+        favorites: [{ provider: fallback.instanceId, model: fallback.model }],
+        providerInstances: {
+          [fallback.instanceId]: { driver: available.driver, enabled: true, config: {} },
+        },
+      },
+    };
+    expect(resolveNewThreadModelSelection(routed)).toEqual({
+      selection: fallback,
+      fallback: null,
+      routing: { reason: "Starred Fable 5.1 on Claude: Session 70% left, weekly not reported." },
+    });
+    expect(
+      resolveNewThreadModelSelection({ ...routed, explicitSelection: selection }).selection,
+    ).toEqual(selection);
+    // No default means the caller defers to the user's last pick, which routing keeps.
+    expect(resolveNewThreadModelSelection({ ...routed, defaultSelection: null }).selection).toBe(
+      null,
+    );
+    // A stale reading is not capacity, so the default stays.
+    expect(resolveNewThreadModelSelection({ ...routed, now: now + 10 * 60_000 }).selection).toEqual(
+      selection,
+    );
+    expect(
+      resolveNewThreadModelSelection({
+        ...routed,
+        settings: { ...routed.settings, usageAwareRouting: false },
+      }).selection,
+    ).toEqual(selection);
+  });
   it.each([
     { enabled: false },
     { installed: false },
