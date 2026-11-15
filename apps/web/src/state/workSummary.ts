@@ -155,18 +155,25 @@ export function useWorkSummary(
   const current = useAtomValue(
     enabled ? workByWindowAtom(selectionKeyOf(window, scope)) : NO_WORK_ATOM,
   );
-  // A new window or scope reads from scratch; keep the last answered figures on screen meanwhile.
+  // A new window reads from scratch, so keep the last figures meanwhile. Never across a scope
+  // change: that would show environments or projects the viewer just left.
+  const scopeKey = JSON.stringify([
+    scope.environmentIds === null ? null : [...scope.environmentIds].sort(),
+    scope.projectKeys === null ? null : [...scope.projectKeys].sort(),
+  ]);
   const [answered, setAnswered] = useState<{
     readonly selection: WorkSelection;
     readonly window: WorkSummaryWindow;
+    readonly scopeKey: string;
   } | null>(null);
   if (current.summaries.length > 0 && answered?.selection !== current) {
-    setAnswered({ selection: current, window });
+    setAnswered({ selection: current, window, scopeKey });
   }
   const waiting =
     current.summaries.length === 0 &&
     current.environments.some((environment) => environment.isPending);
-  const shown = waiting && answered !== null ? answered : { selection: current, window };
+  const shown =
+    waiting && answered?.scopeKey === scopeKey ? answered : { selection: current, window };
   const { environments, summaries } = shown.selection;
   // Staleness is judged at the time the figures were read, which keeps this render pure.
   const readAt = summaries.reduce(

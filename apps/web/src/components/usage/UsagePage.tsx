@@ -484,7 +484,11 @@ export function UsagePage() {
             showingLimits ? "Refresh limits" : showingWork ? "Refresh work" : "Refresh usage"
           }
           aria-busy={isRefreshing || (showingWork && work.isReading)}
-          disabled={isRefreshing || (!showingLimits && !showingWork && !canReadDiagnostics)}
+          disabled={
+            isRefreshing ||
+            (showingWork && work.isReading) ||
+            (!showingLimits && !showingWork && !canReadDiagnostics)
+          }
           size="icon-sm"
           variant="ghost"
         >
@@ -547,7 +551,11 @@ export function UsagePage() {
             showingLimits ? "Refresh limits" : showingWork ? "Refresh work" : "Refresh usage"
           }
           aria-busy={isRefreshing || (showingWork && work.isReading)}
-          disabled={isRefreshing || (!showingLimits && !showingWork && !canReadDiagnostics)}
+          disabled={
+            isRefreshing ||
+            (showingWork && work.isReading) ||
+            (!showingLimits && !showingWork && !canReadDiagnostics)
+          }
           size="icon-sm"
           variant="ghost"
         >
