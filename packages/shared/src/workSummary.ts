@@ -82,7 +82,7 @@ export function deriveWorkSummaryTotals(input: {
 }): WorkSummaryTotals {
   const { window, summaries, now } = input;
   const compatible = summaries.filter(
-    (summary) => summary.contractVersion >= WORK_SUMMARY_CONTRACT_VERSION,
+    (summary) => summary.contractVersion === WORK_SUMMARY_CONTRACT_VERSION,
   );
   const rows = dedupeWorkSummaryPullRequests(compatible.flatMap((summary) => summary.pullRequests));
 

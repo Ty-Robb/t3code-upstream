@@ -231,9 +231,13 @@ describe("deriveWorkSummaryTotals", () => {
     expect(result.pullRequests.staleStatus).toBe(1);
   });
 
-  it("reports coverage and ignores summaries from servers older than this contract", () => {
+  it("reports coverage and ignores summaries from other contract versions", () => {
     const result = totals(
-      [summary({ runsCompleted: 3 }), summary({ contractVersion: 0, runsCompleted: 99 })],
+      [
+        summary({ runsCompleted: 3 }),
+        summary({ contractVersion: 0, runsCompleted: 99 }),
+        summary({ contractVersion: 2, runsCompleted: 99 }),
+      ],
       3,
     );
     expect(result.coverage).toEqual({ environmentsReporting: 1, environmentsTotal: 3 });

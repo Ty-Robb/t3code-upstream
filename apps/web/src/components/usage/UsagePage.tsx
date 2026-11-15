@@ -409,7 +409,11 @@ export function UsagePage() {
             environments={environments}
             selectedEnvironments={selectedEnvironments}
             selectedEnvironmentIds={selectedEnvironmentIds}
-            onSelectionChange={setSelectedEnvironmentIds}
+            onSelectionChange={(next) => {
+              setSelectedEnvironmentIds(next);
+              // Project keys only describe the environments chosen before; a new set starts unfiltered.
+              setWorkProjectKeys(null);
+            }}
             showUsageStatus={!showingLimits && !showingWork}
             refreshing={refreshingUsage}
             isPartial={isPartial}
@@ -476,7 +480,9 @@ export function UsagePage() {
         </ToggleGroup>
         <Button
           onClick={refreshWindow}
-          aria-label={showingLimits ? "Refresh limits" : "Refresh usage"}
+          aria-label={
+            showingLimits ? "Refresh limits" : showingWork ? "Refresh work" : "Refresh usage"
+          }
           aria-busy={isRefreshing || (showingWork && work.isReading)}
           disabled={isRefreshing || (!showingLimits && !showingWork && !canReadDiagnostics)}
           size="icon-sm"
@@ -537,7 +543,9 @@ export function UsagePage() {
         </Select>
         <Button
           onClick={refreshWindow}
-          aria-label={showingLimits ? "Refresh limits" : "Refresh usage"}
+          aria-label={
+            showingLimits ? "Refresh limits" : showingWork ? "Refresh work" : "Refresh usage"
+          }
           aria-busy={isRefreshing || (showingWork && work.isReading)}
           disabled={isRefreshing || (!showingLimits && !showingWork && !canReadDiagnostics)}
           size="icon-sm"
