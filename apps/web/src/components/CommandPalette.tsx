@@ -246,6 +246,7 @@ import { Checkbox } from "./ui/checkbox";
 import { ProjectFilePicker } from "./files/ProjectFilePicker";
 import { openLinkPullRequestDialog } from "./pullRequest/LinkPullRequestDialog";
 import { canShareWithGuestAtom } from "./chat/guestShareAvailability";
+import { openWorkShareDialog, SAMPLE_WORK_SHARE_INPUT } from "./workShare/workShareDialogState";
 import { openGuestShareDialog } from "./chat/guestShareDialogState";
 import { ProjectContentSearchDialog } from "./search/ProjectContentSearchDialog";
 import { settingsForThisPlatform, SETTINGS_SECTION_LABELS } from "./settings/settingsSearch";
@@ -1508,6 +1509,20 @@ function OpenCommandPaletteDialog(props: {
       openChildSearch("content", { query, linkedThreadSearch });
     },
   });
+
+  // Until the work summary dashboard supplies real counts, only developers see the sample card.
+  if (import.meta.env.DEV) {
+    actionItems.push({
+      kind: "action",
+      value: "action:preview-work-share-card",
+      searchTerms: ["share", "work card", "accomplishments", "x", "twitter", "png"],
+      title: "Preview work share card (sample data)",
+      icon: <UserPlusIcon className={ITEM_ICON_CLASS} />,
+      run: async () => {
+        openWorkShareDialog(SAMPLE_WORK_SHARE_INPUT);
+      },
+    });
+  }
 
   if (newProjectEnvironmentOptions.length > 0) {
     actionItems.push({
