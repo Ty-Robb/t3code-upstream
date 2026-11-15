@@ -123,6 +123,7 @@ it("dismisses and restores the support link, and blocks sharing sample data", as
   await using _screen = await renderDialog({ ...input, source: "sample" });
   await expect.element(page.getByRole("button", { name: "Post on X…" })).toBeDisabled();
   await expect.element(page.getByRole("button", { name: "Copy text" })).toBeDisabled();
+  await expect.element(page.getByRole("button", { name: "Copy image" })).toBeDisabled();
   await expect.element(page.getByRole("button", { name: "Download PNG" })).toBeEnabled();
   domClick("Dismiss");
   await expect.element(page.getByText(/star it/)).not.toBeInTheDocument();
@@ -140,7 +141,7 @@ it("explains an empty T3-tracked summary instead of offering a card of zeros", a
     projectLabel: null,
     counts: { pullRequestsOpened: 0, pullRequestsMerged: 0, threadsWorkedOn: 0 },
   });
-  await expect.element(page.getByText(/Nothing to share yet/)).toBeVisible();
+  await expect.element(page.getByText(/Nothing to share for this period yet/)).toBeVisible();
   await expect.element(page.getByRole("button", { name: "Post on X…" })).toBeDisabled();
   await expect.element(page.getByRole("button", { name: "Download PNG" })).toBeDisabled();
 });

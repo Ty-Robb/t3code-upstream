@@ -135,6 +135,17 @@ function formatCompact(value: number): string {
   );
 }
 
+/** Whether the tokens opt-in would add anything, so the UI only offers it when it does. */
+export function canIncludeTokens(input: WorkShareInput): boolean {
+  const tokens = input.insights?.tokensPerMergedPullRequest;
+  return (
+    tokens !== undefined &&
+    Number.isFinite(tokens) &&
+    tokens > 0 &&
+    (input.counts.pullRequestsMerged ?? 0) > 0
+  );
+}
+
 function buildInsights(input: WorkShareInput, options: WorkShareOptions): string[] {
   const { insights } = input;
   const out: string[] = [];
@@ -143,13 +154,7 @@ function buildInsights(input: WorkShareInput, options: WorkShareOptions): string
     out.push(`${Math.round(rate)}% of opened PRs merged`);
   }
   const tokens = insights?.tokensPerMergedPullRequest;
-  if (
-    options.includeTokens &&
-    tokens !== undefined &&
-    Number.isFinite(tokens) &&
-    tokens > 0 &&
-    (input.counts.pullRequestsMerged ?? 0) > 0
-  ) {
+  if (options.includeTokens && tokens !== undefined && canIncludeTokens(input)) {
     out.push(`${formatCompact(tokens)} tokens per merged PR`);
   }
   return out;
@@ -193,7 +198,7 @@ export function buildWorkShareCard(
     ...insights,
     ...(coverageNote ? [coverageNote] : []),
   ];
-  if (!options.includeTokens && input.insights?.tokensPerMergedPullRequest !== undefined) {
+  if (!options.includeTokens && canIncludeTokens(input)) {
     withheld.push("Token usage");
   }
   if (projectLabel) {

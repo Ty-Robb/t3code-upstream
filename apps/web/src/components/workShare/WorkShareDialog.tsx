@@ -1,6 +1,7 @@
 import { useAtomValue } from "@effect/atom-react";
 import {
   buildWorkShareCard,
+  canIncludeTokens,
   DEFAULT_WORK_SHARE_OPTIONS,
   WORK_SHARE_REPOSITORY_URL,
   type WorkShareInput,
@@ -140,8 +141,7 @@ export function WorkShareDialogBody({ input }: { readonly input: WorkShareInput 
         {input.source === "dashboard" && !card.canShare ? (
           <Alert>
             <AlertDescription>
-              Nothing to share yet. Only pull requests that T3 Code tracked in this period count,
-              and none were linked.
+              Nothing to share for this period yet. Only activity T3 Code tracked counts.
             </AlertDescription>
           </Alert>
         ) : null}
@@ -183,8 +183,7 @@ export function WorkShareDialogBody({ input }: { readonly input: WorkShareInput 
               Include the project name
             </Label>
           ) : null}
-          {input.insights?.tokensPerMergedPullRequest !== undefined &&
-          (input.counts.pullRequestsMerged ?? 0) > 0 ? (
+          {canIncludeTokens(input) ? (
             <Label>
               <Checkbox
                 checked={options.includeTokens}
