@@ -55,6 +55,10 @@
       "types": "./src/projectFaviconCache.ts",
       "default": "./src/projectFaviconCache.ts"
     },
+    "./work-share": {
+      "types": "./src/workShare.ts",
+      "default": "./src/workShare.ts"
+    },
     "./user-message": {
       "types": "./src/userMessage.ts",
       "default": "./src/userMessage.ts"
